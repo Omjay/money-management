@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.omjay.moneymanager"
+    namespace = "com.bhaipaisa.moneymanager"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.omjay.moneymanager"
+        applicationId = "com.bhaipaisa.moneymanager"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

@@ -106,6 +106,8 @@ Never commit:
 
 Use local sample fixtures with masked values for parser tests. Keep provider-specific data isolated so additional banks and cards can be added without changing the core ledger.
 
+Before publishing a change, run `powershell -ExecutionPolicy Bypass -File scripts/verify_repository_privacy.ps1`. It rejects tracked statement/release/key files, local user paths, email addresses, and likely card-number strings. It is a safety net, not a substitute for human review.
+
 ## Roadmap
 
 1. Establish the native Android project and local data model.
@@ -116,7 +118,3 @@ Use local sample fixtures with masked values for parser tests. Keep provider-spe
 6. Add Gmail, notification, and SMS integrations only after privacy and Play policy review.
 7. Add opt-in encrypted Drive sync.
 8. Prepare an iOS implementation using the same normalized data model and product behavior.
-
-## Development note
-
-The GitHub destination for this project is the user's `Omjay/money-management` repository. Commits and future pushes must use that account and must not use an Exaqube organization or identity.

@@ -1,4 +1,4 @@
-package com.omjay.moneymanager
+package com.bhaipaisa.moneymanager
 
 import android.os.Bundle
 import android.net.Uri

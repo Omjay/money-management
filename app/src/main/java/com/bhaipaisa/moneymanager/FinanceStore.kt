@@ -1,4 +1,4 @@
-package com.omjay.moneymanager
+package com.bhaipaisa.moneymanager
 
 import android.content.ContentResolver
 import android.content.Context
