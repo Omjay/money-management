@@ -201,7 +201,7 @@ object StatementParser {
     private fun bankCategory(detail: String, delta: Long): String {
         val normalised = detail.uppercase(Locale.US)
         return when {
-            listOf("KRITI VASUDEV", "UPI/", "IMPS/", "NEFT").any(normalised::contains) -> "Peer transfer - review"
+            listOf("UPI/", "IMPS/", "NEFT").any(normalised::contains) -> "Peer transfer - review"
             listOf("GROWW", "MUTUAL FUND", "SIP", "AUTOPAY").any(normalised::contains) -> "Investments"
             listOf("SWIGGY", "ZOMATO", "MCD", "RESTAURANT", "CAFE", "GROCERY").any(normalised::contains) -> "Food & grocery"
             listOf("PETROL", "FUEL", "METRO", "UBER", "OLA").any(normalised::contains) -> "Travel"
