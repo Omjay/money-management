@@ -41,6 +41,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -51,6 +52,7 @@ import java.text.NumberFormat
 import java.time.LocalDate
 import java.util.Locale
 import java.util.UUID
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -74,6 +76,8 @@ private fun MoneyManagerApp() {
     var dialog by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingImport by remember { mutableStateOf<Uri?>(null) }
     var importMessage by remember { mutableStateOf<String?>(null) }
+    var importing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val importStatement = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             pendingImport = uri
@@ -137,13 +141,18 @@ private fun MoneyManagerApp() {
             }
             "import" -> PasswordDialog(onDismiss = { pendingImport = null; dialog = null }) { password ->
                 val uri = pendingImport
-                if (uri != null && vaultError == null) {
-                    val outcome = store.importStatement(uri, password, state)
-                    state = outcome.state
-                    importMessage = outcome.message
-                }
                 pendingImport = null
                 dialog = null
+                if (uri != null && vaultError == null) scope.launch {
+                    importing = true
+                    try {
+                        val outcome = store.importStatement(uri, password, state)
+                        state = outcome.state
+                        importMessage = outcome.message
+                    } finally {
+                        importing = false
+                    }
+                }
             }
             else -> if (dialog?.startsWith("repay:") == true) {
                 val loanId = dialog!!.removePrefix("repay:")
@@ -155,6 +164,9 @@ private fun MoneyManagerApp() {
         }
         importMessage?.let { message ->
             AlertDialog(onDismissRequest = { importMessage = null }, title = { Text("Statement import") }, text = { Text(message) }, confirmButton = { Button(onClick = { importMessage = null }) { Text("Done") } })
+        }
+        if (importing) {
+            AlertDialog(onDismissRequest = {}, title = { Text("Importing locally") }, text = { Text("Reading this statement on your device. No data is being sent anywhere.") }, confirmButton = {})
         }
         vaultError?.let { error ->
             AlertDialog(onDismissRequest = {}, title = { Text("Vault needs attention") }, text = { Text("$error The app is read-only until this is resolved; it will not overwrite the vault.") }, confirmButton = { Button(onClick = {}) { Text("Keep read-only") } })

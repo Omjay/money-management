@@ -1,6 +1,7 @@
 package com.omjay.moneymanager
 
 import android.content.Context
+import android.net.Uri
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
@@ -9,8 +10,11 @@ import java.security.MessageDigest
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class ParsedStatementTransaction(
+    val provider: String,
     val sourceType: String,
     val sourceEnding: String,
     val reference: String,
@@ -46,23 +50,34 @@ object StatementParser {
     private val trailingPoints = Regex("\\s+-?\\d+(?:\\s+-?\\d+)?\\s*$")
     private val currencyAmount = Regex("[0-9][0-9,]*\\.[0-9]{2}")
 
-    fun parse(context: Context, input: InputStream, password: String?): StatementParseResult {
+    suspend fun parse(context: Context, uri: Uri, password: String?): StatementParseResult {
+        val text = withContext(Dispatchers.IO) {
+            context.contentResolver.openInputStream(uri)?.use { input -> extractText(context, input, password) }
+        } ?: return StatementParseResult.Unsupported("The selected file could not be opened.")
+        val parsed = when {
+            text.contains("CREDIT CARD STATEMENT", ignoreCase = true) && text.contains("Transaction Details", ignoreCase = true) -> parseIciciCreditCard(text)
+            text.contains("Statement of Transactions in Savings Account", ignoreCase = true) -> parseIciciSavingsAccount(text)
+            else -> null
+        }
+        if (parsed != null && parsed.transactions.isNotEmpty()) return StatementParseResult.Success(parsed)
+        if (password.isNullOrBlank()) {
+            HdfcOcrParser.parse(context, uri)?.let { return StatementParseResult.Success(it) }
+        }
+        return StatementParseResult.Unsupported(
+            if (password.isNullOrBlank()) "This statement format could not be read. The encrypted source copy was still retained locally."
+            else "This password-protected statement format is not supported yet. The encrypted source copy was still retained locally."
+        )
+    }
+
+    private fun extractText(context: Context, input: InputStream, password: String?): String {
         PDFBoxResourceLoader.init(context.applicationContext)
-        val text = try {
+        return try {
             PDDocument.load(input, password?.takeIf { it.isNotBlank() }).use { document ->
                 PDFTextStripper().getText(document)
             }
         } catch (_: Exception) {
-            return StatementParseResult.Unsupported("This PDF could not be opened. Check its password or import an unprotected statement.")
+            ""
         }
-        val parsed = when {
-            text.contains("CREDIT CARD STATEMENT", ignoreCase = true) && text.contains("Transaction Details", ignoreCase = true) -> parseIciciCreditCard(text)
-            text.contains("Statement of Transactions in Savings Account", ignoreCase = true) -> parseIciciSavingsAccount(text)
-            else -> return StatementParseResult.Unsupported("This statement format is not supported yet. The encrypted source copy was still retained locally.")
-        }
-        return if (parsed.transactions.isEmpty()) {
-            StatementParseResult.Unsupported("No transaction rows were recognised. The source copy was retained locally for a future parser update.")
-        } else StatementParseResult.Success(parsed)
     }
 
     private fun parseIciciCreditCard(text: String): ParsedStatement {
@@ -99,6 +114,7 @@ object StatementParser {
         if (beforeAmount.isBlank()) return null
         val title = beforeAmount.replace(Regex("\\s+"), " ").trim()
         return ParsedStatementTransaction(
+            provider = "ICICI",
             sourceType = "credit_card",
             sourceEnding = cardEnding,
             reference = reference,
@@ -149,6 +165,7 @@ object StatementParser {
             val title = bankTitle(block)
             val reference = fingerprint("$accountEnding|$date|$detail|$closingBalance")
             transactions += ParsedStatementTransaction(
+                provider = "ICICI",
                 sourceType = "bank_account",
                 sourceEnding = accountEnding,
                 reference = reference,

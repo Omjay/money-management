@@ -78,10 +78,9 @@ class FinanceStore(private val context: Context) {
         }
     }
 
-    fun importStatement(uri: Uri, password: String?, current: AppState): ImportOutcome {
+    suspend fun importStatement(uri: Uri, password: String?, current: AppState): ImportOutcome {
         val displayName = displayName(context.contentResolver, uri)
-        val parsed = context.contentResolver.openInputStream(uri)?.use { StatementParser.parse(context, it, password) }
-            ?: return ImportOutcome(current, "The selected file could not be opened.")
+        val parsed = StatementParser.parse(context, uri, password)
         val importId = UUID.randomUUID().toString()
         runCatching { encryptSource(uri, importId) }.getOrElse {
             return ImportOutcome(current, "The statement was not saved because its encrypted copy could not be created.")
@@ -93,16 +92,16 @@ class FinanceStore(private val context: Context) {
         val accounts = current.accounts.toMutableList()
         val cardByEnding = cards.filter { it.ending.isNotBlank() }.associateBy { it.ending }.toMutableMap()
         val accountByEnding = accounts.filter { it.ending.isNotBlank() }.associateBy { it.ending }.toMutableMap()
-        parsedTransactions.filter { it.sourceType == "credit_card" }.map { it.sourceEnding }.distinct().forEach { ending ->
+        parsedTransactions.filter { it.sourceType == "credit_card" }.map { it.provider to it.sourceEnding }.distinct().forEach { (provider, ending) ->
             if (ending !in cardByEnding) {
-                val card = CreditCard(UUID.randomUUID().toString(), "ICICI Credit Card", ending)
+                val card = CreditCard(UUID.randomUUID().toString(), "$provider Credit Card", ending)
                 cards += card
                 cardByEnding[ending] = card
             }
         }
-        parsedTransactions.filter { it.sourceType == "bank_account" }.map { it.sourceEnding }.distinct().forEach { ending ->
+        parsedTransactions.filter { it.sourceType == "bank_account" }.map { it.provider to it.sourceEnding }.distinct().forEach { (provider, ending) ->
             if (ending !in accountByEnding) {
-                val account = Account(UUID.randomUUID().toString(), "ICICI Bank", "Savings", ending)
+                val account = Account(UUID.randomUUID().toString(), "$provider Bank", "Savings", ending)
                 accounts += account
                 accountByEnding[ending] = account
             }
@@ -117,7 +116,7 @@ class FinanceStore(private val context: Context) {
         }
         val existingReferences = current.transactions.mapTo(mutableSetOf()) { it.sourceReference }
         val newTransactions = parsedTransactions.mapNotNull { transaction ->
-            val sourceReference = "ICICI:${transaction.sourceType}:${transaction.sourceEnding}:${transaction.reference}"
+            val sourceReference = "${transaction.provider}:${transaction.sourceType}:${transaction.sourceEnding}:${transaction.reference}"
             if (!existingReferences.add(sourceReference)) return@mapNotNull null
             val sourceId = when (transaction.sourceType) {
                 "credit_card" -> cardByEnding[transaction.sourceEnding]?.id

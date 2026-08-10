@@ -6,6 +6,7 @@
 - Statements are selected through Android's system file picker and copied into internal app storage.
 - The app encrypts its local vault and imported-statement copies using AES-GCM keys generated in Android Keystore.
 - The current parser runs on-device only and recognises text-based ICICI savings and credit-card statements. It creates accounts/cards from masked endings, derives savings-account debit/credit direction from the running balance, keeps imports separate, and never persists an entered PDF password.
+- Image-based HDFC savings statements use a bundled, offline ML Kit OCR model. `INTERNET` and `ACCESS_NETWORK_STATE` contributed by the OCR library are explicitly removed from the final application manifest and checked against the built APK.
 - No actual account names, balances, statement contents, passwords, OAuth tokens, or personal loans are present in source control.
 - All categories, account names, card numbers, and peer-ledger entries are entered on-device by the user.
 

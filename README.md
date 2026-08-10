@@ -16,6 +16,7 @@ The `app/` module contains the native Android foundation.
 - Local, encrypted vault using AES-GCM with a non-exportable Android Keystore key.
 - Encrypted copies of manually selected PDF statements in internal app storage.
 - On-device parsing for text-based ICICI savings and credit-card statements, including separate cards in a combined statement, dated transactions, duplicate suppression, balance-derived bank debits/credits, and local merchant categorisation.
+- On-device OCR fallback for image-based HDFC savings statements. The bundled recognition model works offline after installation; its library-provided network permissions are explicitly removed at manifest merge time.
 - No `INTERNET`, SMS, contacts, notification-listener, or Google-account permissions.
 - Empty first-run state: no personal financial data is embedded in source code or test fixtures.
 
