@@ -20,7 +20,7 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-data class Account(val id: String, val name: String, val type: String, val balancePaise: Long = 0)
+data class Account(val id: String, val name: String, val type: String, val ending: String = "", val balancePaise: Long = 0)
 data class CreditCard(val id: String, val name: String, val ending: String = "", val limitPaise: Long = 0)
 data class Loan(val id: String, val personName: String, val principalPaise: Long, val repaidPaise: Long = 0)
 data class Transaction(
@@ -87,25 +87,47 @@ class FinanceStore(private val context: Context) {
             return ImportOutcome(current, "The statement was not saved because its encrypted copy could not be created.")
         }
 
-        val parsedTransactions = (parsed as? StatementParseResult.Success)?.transactions.orEmpty()
+        val parsedStatement = (parsed as? StatementParseResult.Success)?.statement ?: ParsedStatement(emptyList())
+        val parsedTransactions = parsedStatement.transactions
         val cards = current.cards.toMutableList()
+        val accounts = current.accounts.toMutableList()
         val cardByEnding = cards.filter { it.ending.isNotBlank() }.associateBy { it.ending }.toMutableMap()
-        parsedTransactions.map { it.cardEnding }.distinct().forEach { ending ->
+        val accountByEnding = accounts.filter { it.ending.isNotBlank() }.associateBy { it.ending }.toMutableMap()
+        parsedTransactions.filter { it.sourceType == "credit_card" }.map { it.sourceEnding }.distinct().forEach { ending ->
             if (ending !in cardByEnding) {
                 val card = CreditCard(UUID.randomUUID().toString(), "ICICI Credit Card", ending)
                 cards += card
                 cardByEnding[ending] = card
             }
         }
+        parsedTransactions.filter { it.sourceType == "bank_account" }.map { it.sourceEnding }.distinct().forEach { ending ->
+            if (ending !in accountByEnding) {
+                val account = Account(UUID.randomUUID().toString(), "ICICI Bank", "Savings", ending)
+                accounts += account
+                accountByEnding[ending] = account
+            }
+        }
+        parsedStatement.latestBalances.forEach { (ending, balance) ->
+            accountByEnding[ending]?.let { currentAccount ->
+                val updatedAccount = currentAccount.copy(balancePaise = balance)
+                val index = accounts.indexOfFirst { it.id == currentAccount.id }
+                if (index >= 0) accounts[index] = updatedAccount
+                accountByEnding[ending] = updatedAccount
+            }
+        }
         val existingReferences = current.transactions.mapTo(mutableSetOf()) { it.sourceReference }
         val newTransactions = parsedTransactions.mapNotNull { transaction ->
-            val sourceReference = "ICICI:${transaction.cardEnding}:${transaction.reference}"
+            val sourceReference = "ICICI:${transaction.sourceType}:${transaction.sourceEnding}:${transaction.reference}"
             if (!existingReferences.add(sourceReference)) return@mapNotNull null
-            val card = cardByEnding[transaction.cardEnding] ?: return@mapNotNull null
+            val sourceId = when (transaction.sourceType) {
+                "credit_card" -> cardByEnding[transaction.sourceEnding]?.id
+                "bank_account" -> accountByEnding[transaction.sourceEnding]?.id
+                else -> null
+            } ?: return@mapNotNull null
             Transaction(
                 id = UUID.randomUUID().toString(),
-                sourceId = card.id,
-                sourceType = "credit_card",
+                sourceId = sourceId,
+                sourceType = transaction.sourceType,
                 sourceReference = sourceReference,
                 title = transaction.title,
                 category = transaction.category,
@@ -118,6 +140,7 @@ class FinanceStore(private val context: Context) {
             is StatementParseResult.Unsupported -> parsed.reason
         }
         val updated = current.copy(
+            accounts = accounts,
             cards = cards,
             transactions = current.transactions + newTransactions,
             imports = current.imports + StatementImport(importId, displayName, System.currentTimeMillis(), status, newTransactions.size)
@@ -150,7 +173,7 @@ class FinanceStore(private val context: Context) {
     }
 
     private fun encode(state: AppState): String = JSONObject().apply {
-        put("accounts", JSONArray(state.accounts.map { JSONObject().apply { put("id", it.id); put("name", it.name); put("type", it.type); put("balance", it.balancePaise) } }))
+        put("accounts", JSONArray(state.accounts.map { JSONObject().apply { put("id", it.id); put("name", it.name); put("type", it.type); put("ending", it.ending); put("balance", it.balancePaise) } }))
         put("cards", JSONArray(state.cards.map { JSONObject().apply { put("id", it.id); put("name", it.name); put("ending", it.ending); put("limit", it.limitPaise) } }))
         put("loans", JSONArray(state.loans.map { JSONObject().apply { put("id", it.id); put("person", it.personName); put("principal", it.principalPaise); put("repaid", it.repaidPaise) } }))
         put("transactions", JSONArray(state.transactions.map { JSONObject().apply { put("id", it.id); put("sourceId", it.sourceId); put("sourceType", it.sourceType); put("reference", it.sourceReference); put("title", it.title); put("category", it.category); put("amount", it.amountPaise); put("date", it.dateEpochDay) } }))
@@ -165,7 +188,7 @@ class FinanceStore(private val context: Context) {
             for (index in 0 until source.length()) add(mapper(source.getJSONObject(index)))
         }
         return AppState(
-            accounts = items("accounts") { Account(it.getString("id"), it.getString("name"), it.getString("type"), it.optLong("balance")) },
+            accounts = items("accounts") { Account(it.getString("id"), it.getString("name"), it.getString("type"), it.optString("ending"), it.optLong("balance")) },
             cards = items("cards") { CreditCard(it.getString("id"), it.getString("name"), it.optString("ending"), it.optLong("limit")) },
             loans = items("loans") { Loan(it.getString("id"), it.getString("person"), it.getLong("principal"), it.optLong("repaid")) },
             transactions = items("transactions") { Transaction(it.getString("id"), it.getString("sourceId"), it.getString("sourceType"), it.optString("reference", it.getString("id")), it.getString("title"), it.getString("category"), it.getLong("amount"), it.getLong("date")) },

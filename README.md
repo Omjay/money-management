@@ -15,11 +15,11 @@ The `app/` module contains the native Android foundation.
 - Jetpack Compose screens for Home, accounts, cards, people/loans, and insights.
 - Local, encrypted vault using AES-GCM with a non-exportable Android Keystore key.
 - Encrypted copies of manually selected PDF statements in internal app storage.
-- On-device parsing for text-based ICICI credit-card statements, including separate cards in a combined statement, dated transactions, duplicate suppression, and local merchant categorisation.
+- On-device parsing for text-based ICICI savings and credit-card statements, including separate cards in a combined statement, dated transactions, duplicate suppression, balance-derived bank debits/credits, and local merchant categorisation.
 - No `INTERNET`, SMS, contacts, notification-listener, or Google-account permissions.
 - Empty first-run state: no personal financial data is embedded in source code or test fixtures.
 
-The current build intentionally does **not** yet parse ICICI/HDFC bank-account PDFs, connect Gmail, read SMS/notifications, or sync Drive. Those integrations require parser fixtures, consent design, policy review, and tests before they can be enabled safely. PDF passwords entered during manual import are used only for that import and are never stored.
+The current build intentionally does **not** yet parse HDFC or other bank/account PDFs, connect Gmail, read SMS/notifications, or sync Drive. Those integrations require parser fixtures, consent design, policy review, and tests before they can be enabled safely. PDF passwords entered during manual import are used only for that import and are never stored.
 
 ### Prerequisites to build the private APK
 

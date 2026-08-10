@@ -5,7 +5,7 @@
 - The Android app declares no `INTERNET`, SMS, contacts, notification-listener, or account permissions.
 - Statements are selected through Android's system file picker and copied into internal app storage.
 - The app encrypts its local vault and imported-statement copies using AES-GCM keys generated in Android Keystore.
-- The current parser runs on-device only and recognises text-based ICICI credit-card statements. It creates cards from masked card endings, keeps imports separate, and never persists an entered PDF password.
+- The current parser runs on-device only and recognises text-based ICICI savings and credit-card statements. It creates accounts/cards from masked endings, derives savings-account debit/credit direction from the running balance, keeps imports separate, and never persists an entered PDF password.
 - No actual account names, balances, statement contents, passwords, OAuth tokens, or personal loans are present in source control.
 - All categories, account names, card numbers, and peer-ledger entries are entered on-device by the user.
 

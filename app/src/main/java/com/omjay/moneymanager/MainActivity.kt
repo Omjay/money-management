@@ -124,7 +124,7 @@ private fun MoneyManagerApp() {
 
         when (dialog) {
             "account" -> EditorDialog("Add account", "Account name", "Savings", onDismiss = { dialog = null }) { name, type, amount ->
-                update(state.copy(accounts = state.accounts + Account(UUID.randomUUID().toString(), name, type, amount)))
+                update(state.copy(accounts = state.accounts + Account(UUID.randomUUID().toString(), name, type, balancePaise = amount)))
                 dialog = null
             }
             "card" -> EditorDialog("Add credit card", "Card name", "Credit card", onDismiss = { dialog = null }) { name, ending, limit ->
