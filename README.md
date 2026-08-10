@@ -4,9 +4,30 @@ Privacy-first personal money manager for Android, with a future iOS companion an
 
 ## Current status
 
-This repository is being used as the project home while the product is being redesigned from the existing Android APK. The current interactive phone preview is maintained in the Codex visualization workspace and demonstrates the proposed navigation and information architecture.
+This repository is being used as the project home while the product is being redesigned from the existing Android APK. It now includes an Android/Jetpack Compose foundation for an offline-first private vault; the current interactive phone preview remains the design reference.
 
-The first product milestone is a reliable offline-first Android application. It must work without an account or network connection after setup, with manual statement import available as the fallback. Automatic Gmail and notification/SMS ingestion are planned integrations and are not enabled by this preview.
+The first product milestone is a reliable offline-first Android application. It works without an account or network connection after setup, with manual statement import through the Android system file picker. Automatic Gmail and notification/SMS ingestion are planned integrations and are deliberately not enabled in v1.
+
+## Current Android build
+
+The `app/` module contains the native Android foundation.
+
+- Jetpack Compose screens for Home, accounts, cards, people/loans, and insights.
+- Local, encrypted vault using AES-GCM with a non-exportable Android Keystore key.
+- Encrypted copies of manually selected PDF statements in internal app storage.
+- On-device parsing for text-based ICICI credit-card statements, including separate cards in a combined statement, dated transactions, duplicate suppression, and local merchant categorisation.
+- No `INTERNET`, SMS, contacts, notification-listener, or Google-account permissions.
+- Empty first-run state: no personal financial data is embedded in source code or test fixtures.
+
+The current build intentionally does **not** yet parse ICICI/HDFC bank-account PDFs, connect Gmail, read SMS/notifications, or sync Drive. Those integrations require parser fixtures, consent design, policy review, and tests before they can be enabled safely. PDF passwords entered during manual import are used only for that import and are never stored.
+
+### Prerequisites to build the private APK
+
+- Android Studio (current stable) with Android SDK Platform 35.
+- JDK 17.
+- A physical Android phone with USB debugging enabled, or an emulator.
+
+Open this folder in Android Studio, let it sync dependencies, then use **Build > Build APK(s)**. The output will be `app/build/outputs/apk/debug/app-debug.apk`. Never commit signing material, PDFs, statement passwords, or the on-device vault. The debug APK is ignored by default until a release policy is added.
 
 ## Product goals
 
@@ -24,7 +45,7 @@ The first product milestone is a reliable offline-first Android application. It 
 - Offline-first by default.
 - No email, SMS, notification, or bank data leaves the device unless the user explicitly enables a future integration.
 - Gmail access, when implemented, must be read-only and limited to the required messages.
-- Statement passwords must be stored only in device-protected encrypted storage; never commit passwords, PDFs, tokens, or personal statement data to Git.
+- Statement passwords used for future automated sources must be stored only in device-protected encrypted storage. The current manual importer does not retain passwords. Never commit passwords, PDFs, tokens, or personal statement data to Git.
 - Optional Google Drive sync is intended for encrypted application state only and must be clearly opt-in.
 - All automatic classifications must remain reviewable and reversible.
 
