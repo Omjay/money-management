@@ -26,9 +26,13 @@ The current build intentionally does **not** yet parse HDFC or other bank/accoun
 
 - Android Studio (current stable) with Android SDK Platform 35.
 - JDK 17.
-- A physical Android phone with USB debugging enabled, or an emulator.
+- An emulator or a test phone for debug builds. Do not install the debug build on a phone containing real financial data.
 
-Open this folder in Android Studio, let it sync dependencies, then use **Build > Build APK(s)**. The output will be `app/build/outputs/apk/debug/app-debug.apk`. Never commit signing material, PDFs, statement passwords, or the on-device vault. The debug APK is ignored by default until a release policy is added.
+Open this folder in Android Studio and let it sync dependencies. Debug builds use the separate `com.bhaipaisa.moneymanager.debug` application ID and are for development only.
+
+For a private phone installation, use **Build > Generate Signed Bundle / APK**, select **APK**, choose the **release** variant, and sign it with a private release key stored outside this repository. Verify that the resulting APK is not debuggable and is signed by your release certificate before installation. Never commit signing material, PDFs, statement passwords, or the on-device vault.
+
+GitHub can produce the same private release through the manually triggered **Build private release APK** workflow after these repository secrets are configured: `BHAIPAISA_KEYSTORE_BASE64`, `BHAIPAISA_SIGNING_STORE_PASSWORD`, `BHAIPAISA_SIGNING_KEY_ALIAS`, and `BHAIPAISA_SIGNING_KEY_PASSWORD`. The keystore secret is the base64 encoding of the private JKS file. The workflow verifies the signature, non-debuggable manifest, and restricted permissions before exposing the APK as a GitHub Actions artifact. Never use an unsigned or debug artifact on a primary phone.
 
 ## Product goals
 
@@ -106,6 +110,8 @@ Never commit:
 
 Use local sample fixtures with masked values for parser tests. Keep provider-specific data isolated so additional banks and cards can be added without changing the core ledger.
 
+Before publishing a change, run `powershell -ExecutionPolicy Bypass -File scripts/verify_repository_privacy.ps1`. It rejects tracked statement/release/key files, local user paths, email addresses, and likely card-number strings. It is a safety net, not a substitute for human review.
+
 ## Roadmap
 
 1. Establish the native Android project and local data model.
@@ -116,7 +122,3 @@ Use local sample fixtures with masked values for parser tests. Keep provider-spe
 6. Add Gmail, notification, and SMS integrations only after privacy and Play policy review.
 7. Add opt-in encrypted Drive sync.
 8. Prepare an iOS implementation using the same normalized data model and product behavior.
-
-## Development note
-
-The GitHub destination for this project is the user's `Omjay/money-management` repository. Commits and future pushes must use that account and must not use an Exaqube organization or identity.
