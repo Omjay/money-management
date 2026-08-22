@@ -1,12 +1,21 @@
 package com.bhaipaisa.moneymanager
 
+import android.app.KeyguardManager
+import android.content.Context
 import android.os.Bundle
 import android.net.Uri
-import androidx.activity.ComponentActivity
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -46,6 +55,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import java.text.NumberFormat
@@ -54,11 +66,93 @@ import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.launch
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
+    private var unlocked by mutableStateOf(false)
+    private var unlockError by mutableStateOf<String?>(null)
+    private var authenticationInProgress = false
+    private val handler = Handler(Looper.getMainLooper())
+    private val relock = Runnable { unlocked = false }
+    private lateinit var biometricPrompt: BiometricPrompt
+    private lateinit var store: FinanceStore
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         enableEdgeToEdge()
-        setContent { MoneyManagerApp() }
+        store = FinanceStore(applicationContext)
+        biometricPrompt = BiometricPrompt(this, ContextCompat.getMainExecutor(this), object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                authenticationInProgress = false
+                unlockError = null
+                unlocked = true
+                handler.removeCallbacks(relock)
+                handler.postDelayed(relock, (VAULT_AUTH_VALIDITY_SECONDS - 10L) * 1_000L)
+            }
+
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                authenticationInProgress = false
+                unlocked = false
+                unlockError = if (errorCode == BiometricPrompt.ERROR_USER_CANCELED || errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
+                    "Unlock was cancelled."
+                } else errString.toString()
+            }
+        })
+        setContent {
+            if (unlocked) MoneyManagerApp(store) else VaultLockedScreen(unlockError, onUnlock = ::requestUnlock)
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (!unlocked && !authenticationInProgress) requestUnlock()
+    }
+
+    override fun onStop() {
+        handler.removeCallbacks(relock)
+        if (!authenticationInProgress && !isChangingConfigurations) unlocked = false
+        super.onStop()
+    }
+
+    private fun requestUnlock() {
+        if (authenticationInProgress) return
+        authenticationInProgress = true
+        unlockError = null
+        val keyguard = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+        if (!keyguard.isDeviceSecure) {
+            authenticationInProgress = false
+            unlockError = "Set a phone PIN, pattern, or password before using BhaiPaisa."
+            return
+        }
+        runCatching { store.prepareForAuthentication() }.onFailure {
+            authenticationInProgress = false
+            unlockError = "The secure hardware-backed vault could not be prepared on this device."
+            return
+        }
+        val prompt = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Unlock BhaiPaisa")
+            .setSubtitle("Use your phone's secure lock to open the local vault")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            prompt.setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+        } else {
+            @Suppress("DEPRECATION")
+            prompt.setDeviceCredentialAllowed(true)
+        }
+        biometricPrompt.authenticate(prompt.build())
+    }
+}
+
+@Composable
+private fun VaultLockedScreen(error: String?, onUnlock: () -> Unit) {
+    MaterialTheme(colorScheme = androidx.compose.material3.lightColorScheme(primary = Color(0xFF0876D1))) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(32.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text("BhaiPaisa is locked", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            Text("Your local financial vault opens only after biometric or device-credential authentication.", modifier = Modifier.padding(vertical = 12.dp))
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 12.dp)) }
+            Button(onClick = onUnlock) { Text("Unlock") }
+        }
     }
 }
 
@@ -66,9 +160,7 @@ private enum class Destination(val label: String) { HOME("Home"), ACCOUNTS("Mone
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MoneyManagerApp() {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val store = remember { FinanceStore(context.applicationContext) }
+private fun MoneyManagerApp(store: FinanceStore) {
     val loadedVault = remember { store.load() }
     var state by remember { mutableStateOf(loadedVault.state) }
     var vaultError by remember { mutableStateOf(loadedVault.error) }
@@ -86,8 +178,9 @@ private fun MoneyManagerApp() {
     }
     fun update(next: AppState) {
         if (vaultError == null) {
-            store.save(next)
-            state = next
+            runCatching { store.save(next) }
+                .onSuccess { state = next }
+                .onFailure { vaultError = "The encrypted vault could not be updated. No changes were saved." }
         }
     }
 
@@ -291,11 +384,18 @@ private fun PasswordDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Enter a PDF password only if this statement is protected. It is used for this import and is never stored.")
-                OutlinedTextField(password, { password = it }, label = { Text("PDF password (optional)") })
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("PDF password (optional)") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    singleLine = true
+                )
             }
         },
-        confirmButton = { Button(onClick = { onConfirm(password) }) { Text("Parse locally") } },
-        dismissButton = { Button(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = { Button(onClick = { val submitted = password; password = ""; onConfirm(submitted) }) { Text("Parse locally") } },
+        dismissButton = { Button(onClick = { password = ""; onDismiss() }) { Text("Cancel") } }
     )
 }
 

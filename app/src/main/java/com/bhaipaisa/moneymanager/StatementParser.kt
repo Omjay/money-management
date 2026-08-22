@@ -1,17 +1,21 @@
 package com.bhaipaisa.moneymanager
 
 import android.content.Context
-import android.net.Uri
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
-import java.io.InputStream
+import java.io.File
 import java.security.MessageDigest
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.time.format.ResolverStyle
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+internal const val MAX_STATEMENT_PAGES = 50
+
+internal class StatementRejectedException(message: String) : Exception(message)
 
 data class ParsedStatementTransaction(
     val provider: String,
@@ -40,8 +44,8 @@ sealed interface StatementParseResult {
  * transaction when a row cannot be proved from the statement structure.
  */
 object StatementParser {
-    private val creditDateFormatter = DateTimeFormatter.ofPattern("dd/MM/uuuu", Locale.US)
-    private val bankDateFormatter = DateTimeFormatter.ofPattern("dd-MM-uuuu", Locale.US)
+    private val creditDateFormatter = DateTimeFormatter.ofPattern("dd/MM/uuuu", Locale.US).withResolverStyle(ResolverStyle.STRICT)
+    private val bankDateFormatter = DateTimeFormatter.ofPattern("dd-MM-uuuu", Locale.US).withResolverStyle(ResolverStyle.STRICT)
     private val cardNumber = Regex("\\b\\d{4}X+\\d{4}\\b")
     private val bankAccount = Regex("Savings A/c\\s+([X0-9]+)", RegexOption.IGNORE_CASE)
     private val creditRowStart = Regex("^(\\d{2}/\\d{2}/\\d{4})\\s+(\\d+)\\s+(.+)$")
@@ -50,10 +54,10 @@ object StatementParser {
     private val trailingPoints = Regex("\\s+-?\\d+(?:\\s+-?\\d+)?\\s*$")
     private val currencyAmount = Regex("[0-9][0-9,]*\\.[0-9]{2}")
 
-    suspend fun parse(context: Context, uri: Uri, password: String?): StatementParseResult {
+    suspend fun parse(context: Context, source: File, password: String?): StatementParseResult {
         val text = withContext(Dispatchers.IO) {
-            context.contentResolver.openInputStream(uri)?.use { input -> extractText(context, input, password) }
-        } ?: return StatementParseResult.Unsupported("The selected file could not be opened.")
+            extractText(context, source, password)
+        }
         val parsed = when {
             text.contains("CREDIT CARD STATEMENT", ignoreCase = true) && text.contains("Transaction Details", ignoreCase = true) -> parseIciciCreditCard(text)
             text.contains("Statement of Transactions in Savings Account", ignoreCase = true) -> parseIciciSavingsAccount(text)
@@ -61,7 +65,7 @@ object StatementParser {
         }
         if (parsed != null && parsed.transactions.isNotEmpty()) return StatementParseResult.Success(parsed)
         if (password.isNullOrBlank()) {
-            HdfcOcrParser.parse(context, uri)?.let { return StatementParseResult.Success(it) }
+            withContext(Dispatchers.Default) { HdfcOcrParser.parse(source) }?.let { return StatementParseResult.Success(it) }
         }
         return StatementParseResult.Unsupported(
             if (password.isNullOrBlank()) "This statement format could not be read. The encrypted source copy was still retained locally."
@@ -69,18 +73,23 @@ object StatementParser {
         )
     }
 
-    private fun extractText(context: Context, input: InputStream, password: String?): String {
+    private fun extractText(context: Context, source: File, password: String?): String {
         PDFBoxResourceLoader.init(context.applicationContext)
         return try {
-            PDDocument.load(input, password?.takeIf { it.isNotBlank() }).use { document ->
+            PDDocument.load(source, password?.takeIf { it.isNotBlank() }).use { document ->
+                if (document.numberOfPages !in 1..MAX_STATEMENT_PAGES) {
+                    throw StatementRejectedException("The statement has too many pages. The limit is $MAX_STATEMENT_PAGES pages.")
+                }
                 PDFTextStripper().getText(document)
             }
+        } catch (error: StatementRejectedException) {
+            throw error
         } catch (_: Exception) {
             ""
         }
     }
 
-    private fun parseIciciCreditCard(text: String): ParsedStatement {
+    internal fun parseIciciCreditCard(text: String): ParsedStatement {
         val lines = compactLines(text)
         val result = mutableListOf<ParsedStatementTransaction>()
         var currentCardEnding: String? = null
@@ -113,6 +122,7 @@ object StatementParser {
         val beforeAmount = row.substring(0, amountMatch.range.first).replace(trailingPoints, "").trim()
         if (beforeAmount.isBlank()) return null
         val title = beforeAmount.replace(Regex("\\s+"), " ").trim()
+        val date = runCatching { LocalDate.parse(dateText, creditDateFormatter) }.getOrNull() ?: return null
         return ParsedStatementTransaction(
             provider = "ICICI",
             sourceType = "credit_card",
@@ -121,17 +131,17 @@ object StatementParser {
             title = title,
             category = creditCardCategory(title, credit),
             amountPaise = if (credit) amountPaise else -amountPaise,
-            dateEpochDay = LocalDate.parse(dateText, creditDateFormatter).toEpochDay()
+            dateEpochDay = date.toEpochDay()
         )
     }
 
     /** Uses balance movement, not PDF column position, to sign ICICI bank rows. */
-    private fun parseIciciSavingsAccount(text: String): ParsedStatement {
+    internal fun parseIciciSavingsAccount(text: String): ParsedStatement {
         val lines = compactLines(text)
         val transactions = mutableListOf<ParsedStatementTransaction>()
         val balances = mutableMapOf<String, Long>()
         var accountEnding: String? = null
-        var previousBalance: Long? = null
+        val previousBalances = mutableMapOf<String, Long>()
         var index = 0
         while (index < lines.size) {
             bankAccount.find(lines[index])?.groupValues?.getOrNull(1)?.takeLast(4)?.let { accountEnding = it }
@@ -144,21 +154,20 @@ object StatementParser {
             index++
             while (index < lines.size && bankRowStart.matchEntire(lines[index]) == null) {
                 val next = lines[index]
-                if (next.startsWith("Total:", true) || next.startsWith("Page ", true) || next.startsWith("Statement of", true)) break
+                if (bankAccount.containsMatchIn(next) || next.startsWith("Total:", true) || next.startsWith("Page ", true) || next.startsWith("Statement of", true)) break
                 block += next
                 index++
             }
             val amounts = currencyAmount.findAll(block.joinToString(" ")).mapNotNull { paise(it.value) }.toList()
             val closingBalance = amounts.lastOrNull() ?: continue
             balances[accountEnding] = closingBalance
-            val date = LocalDate.parse(match.groupValues[1], bankDateFormatter)
+            val date = runCatching { LocalDate.parse(match.groupValues[1], bankDateFormatter) }.getOrNull() ?: continue
             val detail = block.joinToString(" ").trim()
             if (detail.startsWith("B/F", true)) {
-                previousBalance = closingBalance
+                previousBalances[accountEnding] = closingBalance
                 continue
             }
-            val before = previousBalance
-            previousBalance = closingBalance
+            val before = previousBalances.put(accountEnding, closingBalance)
             if (before == null) continue
             val delta = closingBalance - before
             if (delta == 0L) continue
