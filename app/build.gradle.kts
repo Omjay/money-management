@@ -71,10 +71,10 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     constraints {
-        implementation("org.bouncycastle:bcprov-jdk15to18:1.84") {
+        implementation("org.bouncycastle:bcprov-jdk15to18:1.85") {
             because("PDFBox's older transitive crypto provider has published security advisories")
         }
-        implementation("org.bouncycastle:bcpkix-jdk15to18:1.84") {
+        implementation("org.bouncycastle:bcpkix-jdk15to18:1.85") {
             because("PDFBox's older transitive PKIX library has published security advisories")
         }
     }
