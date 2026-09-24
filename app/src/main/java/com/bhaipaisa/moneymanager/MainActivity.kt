@@ -272,7 +272,7 @@ private fun HomeScreen(state: AppState, modifier: Modifier, onGo: (Destination) 
     val cash = state.accounts.sumOf { it.balancePaise }
     val outstanding = state.loans.sumOf { it.principalPaise - it.repaidPaise }
     LazyColumn(modifier = modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { HeroCard("Money available now", money(cash), "Local vault · no network access") }
+        item { HeroCard("Sum of stored bank balances", money(cash), "Not live. Check each account's statement date before relying on this total.") }
         item { SectionTitle("What needs attention") }
         item { ActionCard("Credit cards", if (state.cards.isEmpty()) "No statements imported" else "${state.cards.size} card(s) · import a statement", onClick = { onGo(Destination.CARDS) }) }
         item { ActionCard("Loans", if (outstanding == 0L) "No loan recorded" else "You owe ${money(outstanding)}", onClick = { onGo(Destination.PEOPLE) }) }
@@ -286,7 +286,10 @@ private fun AccountsScreen(state: AppState, modifier: Modifier) {
     LazyColumn(modifier = modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("Accounts", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }
         if (state.accounts.isEmpty()) item { EmptyState("No bank accounts yet", "Use + to add an account. Balances stay on this device.") }
-        items(state.accounts) { account -> DataCard(account.name, "${account.type} · local balance", money(account.balancePaise)) }
+        items(state.accounts) { account ->
+            val dateNote = account.balanceDateEpochDay?.let { "statement balance as of ${LocalDate.ofEpochDay(it)}" } ?: "balance date unknown"
+            DataCard(account.name, "${account.type} · $dateNote", money(account.balancePaise))
+        }
         item { SectionTitle("Recent transactions") }
         if (state.transactions.isEmpty()) item { EmptyState("No transactions yet", "Statement parsing will populate this list after import and review.") }
         items(state.transactions.sortedByDescending { it.dateEpochDay }.take(20)) { transaction -> DataCard(transaction.title, transaction.category, money(transaction.amountPaise)) }
@@ -305,7 +308,7 @@ private fun CardsScreen(state: AppState, modifier: Modifier, onImport: () -> Uni
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(card.name, fontWeight = FontWeight.SemiBold)
                     Text(if (card.ending.isBlank()) "No number stored" else "Ending ${card.ending}")
-                    Text(if (cardTransactions.isEmpty()) "Amounts stay blank until a statement is imported." else "Tracked card balance ${money(cardTransactions.sumOf { it.amountPaise })}", style = MaterialTheme.typography.bodySmall)
+                    Text("Outstanding balance unavailable until a statement balance is reconciled. The figures below are parsed transaction totals, not the amount due.", style = MaterialTheme.typography.bodySmall)
                     MonthRow("This statement month", monthlySpend(cardTransactions, 0))
                     MonthRow("Previous month", monthlySpend(cardTransactions, 1))
                     MonthRow("2 months ago", monthlySpend(cardTransactions, 2))
@@ -321,7 +324,10 @@ private fun CardsScreen(state: AppState, modifier: Modifier, onImport: () -> Uni
         item { Button(onClick = onImport, modifier = Modifier.fillMaxWidth()) { Text("Import PDF statement") } }
         item { SectionTitle("Encrypted imported statements") }
         if (state.imports.isEmpty()) item { EmptyState("Nothing imported", "The selected PDF is copied into encrypted internal storage.") }
-        items(state.imports.sortedByDescending { it.importedAt }) { item -> DataCard(item.displayName, item.parseStatus, "${item.parsedTransactionCount} added") }
+        items(state.imports.sortedByDescending { it.importedAt }) { item ->
+            val counts = if (item.candidateRows == 0 && item.parsedTransactionCount > 0) "${item.parsedTransactionCount} added · older import; coverage unknown" else "${item.candidateRows} rows found · ${item.parsedTransactionCount} added · ${item.unparsedRows} unparsed"
+            DataCard(item.displayName, "${item.parseStatus} · $counts", "")
+        }
     }
 }
 

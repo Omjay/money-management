@@ -28,26 +28,37 @@ object HdfcOcrParser {
         if (lines.none { it.text.contains("HDFC BANK", ignoreCase = true) }) return null
         val allTransactions = mutableListOf<ParsedStatementTransaction>()
         val balances = mutableMapOf<String, Long>()
+        val balanceDates = mutableMapOf<String, Long>()
+        var candidateRows = 0
+        var unparsedRows = 0
         val accountKey = accountIdentity(accountSignature(lines))
         var previousBalance: Long? = null
         lines.groupBy { it.page }.toSortedMap().forEach { (_, pageLines) ->
             val sorted = pageLines.sortedWith(compareBy<OcrLine> { it.top }.thenBy { it.left })
             val starts = sorted.indices.filter { index -> sorted[index].left < 0.16f && transactionDate.matches(sorted[index].text) }
             starts.forEachIndexed { rowIndex, start ->
+                candidateRows++
                 val end = starts.getOrElse(rowIndex + 1) { sorted.size }
                 val row = sorted.subList(start, end)
-                val date = runCatching { LocalDate.parse(row.first().text, dateFormatter) }.getOrNull() ?: return@forEachIndexed
+                val date = runCatching { LocalDate.parse(row.first().text, dateFormatter) }.getOrNull()
+                if (date == null) { unparsedRows++; return@forEachIndexed }
                 val numericCells = row.filter { it.left > 0.60f && amount.matches(it.text) }
-                val closingCell = numericCells.maxByOrNull { it.left } ?: return@forEachIndexed
-                val closing = closingCell.text.toPaise() ?: return@forEachIndexed
-                balances[accountKey] = closing
+                val closingCell = numericCells.maxByOrNull { it.left }
+                if (closingCell == null) { unparsedRows++; return@forEachIndexed }
+                val closing = closingCell.text.toPaise()
+                if (closing == null) { unparsedRows++; return@forEachIndexed }
+                val dateEpochDay = date.toEpochDay()
+                if (dateEpochDay >= (balanceDates[accountKey] ?: Long.MIN_VALUE)) {
+                    balances[accountKey] = closing
+                    balanceDates[accountKey] = dateEpochDay
+                }
                 val title = row.firstOrNull { line ->
                     line.left in 0.12f..0.52f && line.text != row.first().text && !amount.matches(line.text) && !line.text.matches(Regex("^\\d{8,}$"))
                 }?.text?.normalisedTitle() ?: "HDFC transaction"
                 val before = previousBalance
                 previousBalance = closing
                 val delta = if (before != null) closing - before else initialMovement(numericCells, closingCell.left)
-                if (delta == null || delta == 0L) return@forEachIndexed
+                if (delta == null || delta == 0L) { unparsedRows++; return@forEachIndexed }
                 allTransactions += ParsedStatementTransaction(
                     provider = "HDFC",
                     sourceType = "bank_account",
@@ -56,11 +67,11 @@ object HdfcOcrParser {
                     title = title,
                     category = category(title, delta),
                     amountPaise = delta,
-                    dateEpochDay = date.toEpochDay()
+                    dateEpochDay = dateEpochDay
                 )
             }
         }
-        return if (allTransactions.isEmpty()) null else ParsedStatement(allTransactions.distinctBy { it.reference }, balances)
+        return if (allTransactions.isEmpty()) null else ParsedStatement(allTransactions.distinctBy { it.reference }, balances, balanceDates, candidateRows, unparsedRows)
     }
 
     private suspend fun recognisePdf(source: File): List<OcrLine> {
