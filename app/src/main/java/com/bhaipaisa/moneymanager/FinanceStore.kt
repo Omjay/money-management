@@ -39,7 +39,8 @@ data class Transaction(
     val title: String,
     val category: String,
     val amountPaise: Long,
-    val dateEpochDay: Long
+    val dateEpochDay: Long,
+    val kind: TransactionKind = TransactionKind.REVIEW
 )
 data class StatementImport(
     val id: String,
@@ -55,7 +56,8 @@ data class AppState(
     val cards: List<CreditCard> = emptyList(),
     val loans: List<Loan> = emptyList(),
     val transactions: List<Transaction> = emptyList(),
-    val imports: List<StatementImport> = emptyList()
+    val imports: List<StatementImport> = emptyList(),
+    val rules: List<ClassificationRule> = emptyList()
 )
 
 data class VaultLoad(val state: AppState, val error: String? = null)
@@ -199,15 +201,21 @@ class FinanceStore(private val context: Context) {
                     "bank_account" -> accountBySource[key]?.id
                     else -> null
                 } ?: return@mapNotNull null
+                val classification = applyRule(
+                    classifyTransaction(transaction.sourceType, transaction.title, transaction.category, transaction.amountPaise),
+                    transaction.title,
+                    current.rules
+                )
                 Transaction(
                     id = UUID.randomUUID().toString(),
                     sourceId = sourceId,
                     sourceType = transaction.sourceType,
                     sourceReference = sourceReference,
                     title = transaction.title,
-                    category = transaction.category,
+                    category = classification.category,
                     amountPaise = transaction.amountPaise,
-                    dateEpochDay = transaction.dateEpochDay
+                    dateEpochDay = transaction.dateEpochDay,
+                    kind = classification.kind
                 )
             }
             val status = when (parsed) {
@@ -293,8 +301,9 @@ class FinanceStore(private val context: Context) {
         put("accounts", JSONArray(state.accounts.map { JSONObject().apply { put("id", it.id); put("name", it.name); put("type", it.type); put("ending", it.ending); put("balance", it.balancePaise); put("provider", it.provider); it.balanceDateEpochDay?.let { date -> put("balanceDate", date) } } }))
         put("cards", JSONArray(state.cards.map { JSONObject().apply { put("id", it.id); put("name", it.name); put("ending", it.ending); put("limit", it.limitPaise); put("provider", it.provider) } }))
         put("loans", JSONArray(state.loans.map { JSONObject().apply { put("id", it.id); put("person", it.personName); put("principal", it.principalPaise); put("repaid", it.repaidPaise) } }))
-        put("transactions", JSONArray(state.transactions.map { JSONObject().apply { put("id", it.id); put("sourceId", it.sourceId); put("sourceType", it.sourceType); put("reference", it.sourceReference); put("title", it.title); put("category", it.category); put("amount", it.amountPaise); put("date", it.dateEpochDay) } }))
+        put("transactions", JSONArray(state.transactions.map { JSONObject().apply { put("id", it.id); put("sourceId", it.sourceId); put("sourceType", it.sourceType); put("reference", it.sourceReference); put("title", it.title); put("category", it.category); put("amount", it.amountPaise); put("date", it.dateEpochDay); put("kind", it.kind.name) } }))
         put("imports", JSONArray(state.imports.map { JSONObject().apply { put("id", it.id); put("name", it.displayName); put("at", it.importedAt); put("status", it.parseStatus); put("count", it.parsedTransactionCount); put("candidates", it.candidateRows); put("unparsed", it.unparsedRows) } }))
+        put("rules", JSONArray(state.rules.map { JSONObject().apply { put("keyword", it.keyword); put("kind", it.kind.name); put("category", it.category) } }))
     }.toString()
 
     private fun decode(json: String): AppState {
@@ -308,8 +317,16 @@ class FinanceStore(private val context: Context) {
             accounts = items("accounts") { Account(it.getString("id"), it.getString("name"), it.getString("type"), it.optString("ending"), it.optLong("balance"), it.optString("provider"), if (it.has("balanceDate")) it.getLong("balanceDate") else null) },
             cards = items("cards") { CreditCard(it.getString("id"), it.getString("name"), it.optString("ending"), it.optLong("limit"), it.optString("provider")) },
             loans = items("loans") { Loan(it.getString("id"), it.getString("person"), it.getLong("principal"), it.optLong("repaid")) },
-            transactions = items("transactions") { Transaction(it.getString("id"), it.getString("sourceId"), it.getString("sourceType"), it.optString("reference", it.getString("id")), it.getString("title"), it.getString("category"), it.getLong("amount"), it.getLong("date")) },
-            imports = items("imports") { StatementImport(it.getString("id"), it.getString("name"), it.getLong("at"), it.optString("status", "Imported"), it.optInt("count"), it.optInt("candidates"), it.optInt("unparsed")) }
+            transactions = items("transactions") {
+                val sourceType = it.getString("sourceType")
+                val title = it.getString("title")
+                val category = it.getString("category")
+                val amount = it.getLong("amount")
+                val kind = if (it.has("kind")) TransactionKind.fromStored(it.getString("kind")) else classifyTransaction(sourceType, title, category, amount).kind
+                Transaction(it.getString("id"), it.getString("sourceId"), sourceType, it.optString("reference", it.getString("id")), title, category, amount, it.getLong("date"), kind)
+            },
+            imports = items("imports") { StatementImport(it.getString("id"), it.getString("name"), it.getLong("at"), it.optString("status", "Imported"), it.optInt("count"), it.optInt("candidates"), it.optInt("unparsed")) },
+            rules = items("rules") { ClassificationRule(it.getString("keyword"), TransactionKind.fromStored(it.getString("kind")), it.getString("category")) }
         )
     }
 }

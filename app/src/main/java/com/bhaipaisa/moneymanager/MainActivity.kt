@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Add
@@ -36,6 +37,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -62,6 +66,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import java.text.NumberFormat
 import java.time.LocalDate
+import java.time.YearMonth
 import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.launch
@@ -212,10 +217,10 @@ private fun MoneyManagerApp(store: FinanceStore) {
         ) { padding ->
             when (destination) {
                 Destination.HOME -> HomeScreen(state, Modifier.padding(padding), onGo = { destination = it })
-                Destination.ACCOUNTS -> AccountsScreen(state, Modifier.padding(padding))
-                Destination.CARDS -> CardsScreen(state, Modifier.padding(padding), onImport = { importStatement.launch(arrayOf("application/pdf")) })
+                Destination.ACCOUNTS -> AccountsScreen(state, Modifier.padding(padding), onReview = { dialog = "classify:${it.id}" })
+                Destination.CARDS -> CardsScreen(state, Modifier.padding(padding), onImport = { importStatement.launch(arrayOf("application/pdf")) }, onReview = { dialog = "classify:${it.id}" })
                 Destination.PEOPLE -> LoansScreen(state, Modifier.padding(padding), onRepay = { loan -> dialog = "repay:${loan.id}" })
-                Destination.INSIGHTS -> InsightsScreen(state, Modifier.padding(padding))
+                Destination.INSIGHTS -> InsightsScreen(state, Modifier.padding(padding), onReview = { dialog = "classify:${it.id}" }, onRemoveRule = { index -> update(state.copy(rules = state.rules.filterIndexed { itemIndex, _ -> itemIndex != index })) })
             }
         }
 
@@ -247,7 +252,19 @@ private fun MoneyManagerApp(store: FinanceStore) {
                     }
                 }
             }
-            else -> if (dialog?.startsWith("repay:") == true) {
+            else -> if (dialog?.startsWith("classify:") == true) {
+                val transactionId = dialog!!.removePrefix("classify:")
+                state.transactions.firstOrNull { it.id == transactionId }?.let { transaction ->
+                    ClassificationDialog(transaction, onDismiss = { dialog = null }) { kind, category, keyword ->
+                        val rule = keyword?.let { ClassificationRule(it, kind, category) }
+                        update(state.copy(
+                            transactions = state.transactions.map { if (it.id == transactionId) it.copy(kind = kind, category = category) else it },
+                            rules = if (rule == null) state.rules else state.rules + rule
+                        ))
+                        dialog = null
+                    }
+                }
+            } else if (dialog?.startsWith("repay:") == true) {
                 val loanId = dialog!!.removePrefix("repay:")
                 AmountDialog("Record repayment", onDismiss = { dialog = null }) { amount ->
                     update(state.copy(loans = state.loans.map { if (it.id == loanId) it.copy(repaidPaise = (it.repaidPaise + amount).coerceAtMost(it.principalPaise)) else it }))
@@ -282,7 +299,7 @@ private fun HomeScreen(state: AppState, modifier: Modifier, onGo: (Destination) 
 }
 
 @Composable
-private fun AccountsScreen(state: AppState, modifier: Modifier) {
+private fun AccountsScreen(state: AppState, modifier: Modifier, onReview: (Transaction) -> Unit) {
     LazyColumn(modifier = modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("Accounts", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }
         if (state.accounts.isEmpty()) item { EmptyState("No bank accounts yet", "Use + to add an account. Balances stay on this device.") }
@@ -292,12 +309,12 @@ private fun AccountsScreen(state: AppState, modifier: Modifier) {
         }
         item { SectionTitle("Recent transactions") }
         if (state.transactions.isEmpty()) item { EmptyState("No transactions yet", "Statement parsing will populate this list after import and review.") }
-        items(state.transactions.sortedByDescending { it.dateEpochDay }.take(20)) { transaction -> DataCard(transaction.title, transaction.category, money(transaction.amountPaise)) }
+        items(state.transactions.sortedByDescending { it.dateEpochDay }.take(20)) { transaction -> TransactionCard(transaction, onReview) }
     }
 }
 
 @Composable
-private fun CardsScreen(state: AppState, modifier: Modifier, onImport: () -> Unit) {
+private fun CardsScreen(state: AppState, modifier: Modifier, onImport: () -> Unit, onReview: (Transaction) -> Unit) {
     LazyColumn(modifier = modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("Credit cards", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }
         item { Text("A card payment settles an earlier purchase; it is not counted as new spending.", style = MaterialTheme.typography.bodyMedium) }
@@ -309,13 +326,13 @@ private fun CardsScreen(state: AppState, modifier: Modifier, onImport: () -> Uni
                     Text(card.name, fontWeight = FontWeight.SemiBold)
                     Text(if (card.ending.isBlank()) "No number stored" else "Ending ${card.ending}")
                     Text("Outstanding balance unavailable until a statement balance is reconciled. The figures below are parsed transaction totals, not the amount due.", style = MaterialTheme.typography.bodySmall)
-                    MonthRow("This statement month", monthlySpend(cardTransactions, 0))
+                    MonthRow("Latest transaction month", monthlySpend(cardTransactions, 0))
                     MonthRow("Previous month", monthlySpend(cardTransactions, 1))
                     MonthRow("2 months ago", monthlySpend(cardTransactions, 2))
                     if (cardTransactions.isNotEmpty()) {
                         Text("Transactions", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                         cardTransactions.take(8).forEach { transaction ->
-                            DataCard(transaction.title, "${transaction.category} • ${LocalDate.ofEpochDay(transaction.dateEpochDay)}", money(transaction.amountPaise))
+                            TransactionCard(transaction, onReview)
                         }
                     }
                 }
@@ -352,13 +369,50 @@ private fun LoansScreen(state: AppState, modifier: Modifier, onRepay: (Loan) -> 
 }
 
 @Composable
-private fun InsightsScreen(state: AppState, modifier: Modifier) {
-    val spending = state.transactions.filter { it.amountPaise < 0 }.groupBy { it.category }.mapValues { (_, value) -> value.sumOf { -it.amountPaise } }.toList().sortedByDescending { it.second }
+private fun InsightsScreen(state: AppState, modifier: Modifier, onReview: (Transaction) -> Unit, onRemoveRule: (Int) -> Unit) {
+    var monthsBack by rememberSaveable { mutableStateOf(0) }
+    val anchor = state.transactions.maxOfOrNull { it.dateEpochDay }?.let { YearMonth.from(LocalDate.ofEpochDay(it)) } ?: YearMonth.now()
+    val month = anchor.minusMonths(monthsBack.toLong())
+    val selected = state.transactions.filter { YearMonth.from(LocalDate.ofEpochDay(it.dateEpochDay)) == month }
+    val expenses = selected.filter { it.kind == TransactionKind.EXPENSE && it.amountPaise < 0 }
+    val income = selected.filter { it.kind == TransactionKind.INCOME && it.amountPaise > 0 }.sumOf { it.amountPaise }
+    val investments = selected.filter { it.kind == TransactionKind.INVESTMENT && it.amountPaise < 0 }.sumOf { -it.amountPaise }
+    val refunds = selected.filter { it.kind == TransactionKind.REFUND && it.amountPaise > 0 }.sumOf { it.amountPaise }
+    val debtPayments = selected.filter { it.kind == TransactionKind.DEBT_PAYMENT && it.amountPaise < 0 }.sumOf { -it.amountPaise }
+    val spending = expenses.groupBy { it.category }.mapValues { (_, value) -> value.sumOf { -it.amountPaise } }.toList().sortedByDescending { it.second }
+    val review = selected.filter { it.kind == TransactionKind.REVIEW }.sortedByDescending { it.dateEpochDay }
     LazyColumn(modifier = modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { Text("Spending insights", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }
-        item { Text("Money received and money spent will appear here after statements are parsed and reviewed.") }
-        if (spending.isEmpty()) item { EmptyState("No spending data", "Import a statement, then review its transaction categories.") }
-        items(spending) { (category, amount) -> DataCard(category, "Monthly spent", money(amount)) }
+        item { Text("Monthly finances", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }
+        item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Button(onClick = { monthsBack++ }) { Text("Earlier") }
+            Text(month.toString(), modifier = Modifier.padding(12.dp))
+            Button(onClick = { monthsBack-- }, enabled = monthsBack > 0) { Text("Later") }
+        } }
+        item { Text("Based only on imported and reviewed entries. Missing statement rows or periods can make totals incomplete.", style = MaterialTheme.typography.bodySmall) }
+        item { DataCard("Income", "Confirmed incoming money", money(income)) }
+        item { DataCard("Purchases and fees", "Excludes settlements, transfers and investments", money(expenses.sumOf { -it.amountPaise })) }
+        item { DataCard("Investment contributions", "Not counted as purchases", money(investments)) }
+        item { DataCard("Refunds and credits", "Shown separately from income", money(refunds)) }
+        item { DataCard("Loan payments", "Not counted as purchases", money(debtPayments)) }
+        item { DataCard("Card settlement entries", "May include both sides of one payment", selected.count { it.kind == TransactionKind.CARD_SETTLEMENT }.toString()) }
+        item { DataCard("Transfer entries", "May include both sides of one transfer", selected.count { it.kind == TransactionKind.TRANSFER }.toString()) }
+        item { SectionTitle("Purchase categories") }
+        if (spending.isEmpty()) item { EmptyState("No classified purchases", "This month may have no purchases or may need review.") }
+        items(spending) { (category, amount) -> DataCard(category, "Selected month", money(amount)) }
+        item { SectionTitle("Needs review · ${review.size}") }
+        if (review.isEmpty()) item { Text("No uncertain transactions in this month.") }
+        items(review) { transaction -> TransactionCard(transaction, onReview) }
+        item { SectionTitle("Saved matching rules") }
+        if (state.rules.isEmpty()) item { Text("No custom rules saved.") }
+        itemsIndexed(state.rules) { index, rule ->
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("Contains: ${rule.keyword}")
+                    Text("${rule.kind.label} · ${rule.category}", style = MaterialTheme.typography.bodySmall)
+                    Button(onClick = { onRemoveRule(index) }) { Text("Remove rule") }
+                }
+            }
+        }
     }
 }
 
@@ -366,8 +420,41 @@ private fun InsightsScreen(state: AppState, modifier: Modifier) {
 @Composable private fun SectionTitle(text: String) = Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
 @Composable private fun ActionCard(title: String, subtitle: String, onClick: () -> Unit) = Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(title, fontWeight = FontWeight.SemiBold); Text(subtitle, style = MaterialTheme.typography.bodySmall) } }
 @Composable private fun DataCard(title: String, subtitle: String, value: String) = Card(modifier = Modifier.fillMaxWidth()) { Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) { Column(Modifier.weight(1f)) { Text(title, fontWeight = FontWeight.SemiBold); Text(subtitle, style = MaterialTheme.typography.bodySmall) }; Text(value, modifier = Modifier.padding(start = 12.dp).widthIn(min = 64.dp)) } }
+@Composable private fun TransactionCard(transaction: Transaction, onReview: (Transaction) -> Unit) = Card(onClick = { onReview(transaction) }, modifier = Modifier.fillMaxWidth()) { Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) { Column(Modifier.weight(1f)) { Text(transaction.title, fontWeight = FontWeight.SemiBold); Text("${transaction.kind.label} · ${transaction.category} · ${LocalDate.ofEpochDay(transaction.dateEpochDay)}", style = MaterialTheme.typography.bodySmall) }; Text(money(transaction.amountPaise), modifier = Modifier.padding(start = 12.dp).widthIn(min = 64.dp)) } }
 @Composable private fun EmptyState(title: String, message: String) = Card(modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(title, fontWeight = FontWeight.SemiBold); Text(message, style = MaterialTheme.typography.bodySmall) } }
 @Composable private fun MonthRow(label: String, value: String) = Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(label); Text(value, fontWeight = FontWeight.SemiBold) }
+
+@Composable
+private fun ClassificationDialog(transaction: Transaction, onDismiss: () -> Unit, onConfirm: (TransactionKind, String, String?) -> Unit) {
+    var kind by remember(transaction.id) { mutableStateOf(transaction.kind) }
+    var category by remember(transaction.id) { mutableStateOf(transaction.category) }
+    var expanded by remember { mutableStateOf(false) }
+    var rememberRule by remember { mutableStateOf(false) }
+    var keyword by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Review transaction") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("${transaction.title} · ${money(transaction.amountPaise)}")
+                Button(onClick = { expanded = true }) { Text("Type: ${kind.label}") }
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    TransactionKind.entries.forEach { option ->
+                        DropdownMenuItem(text = { Text(option.label) }, onClick = { kind = option; expanded = false })
+                    }
+                }
+                OutlinedTextField(category, { category = it }, label = { Text("Category") }, singleLine = true)
+                Row { Checkbox(checked = rememberRule, onCheckedChange = { rememberRule = it }); Text("Apply to future descriptions containing a keyword", modifier = Modifier.padding(top = 12.dp)) }
+                if (rememberRule) {
+                    OutlinedTextField(keyword, { keyword = it }, label = { Text("Matching keyword (at least 3 characters)") }, singleLine = true)
+                    Text("Rules are saved only in the encrypted local vault. Choose a specific keyword to avoid misclassifying unrelated entries.", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        confirmButton = { Button(onClick = { onConfirm(kind, category.trim(), keyword.trim().takeIf { rememberRule }) }, enabled = category.isNotBlank() && (!rememberRule || keyword.trim().length >= 3)) { Text("Save locally") } },
+        dismissButton = { Button(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
 
 @Composable
 private fun EditorDialog(title: String, firstLabel: String, secondLabel: String, onDismiss: () -> Unit, onConfirm: (String, String, Long) -> Unit) {

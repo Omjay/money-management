@@ -213,8 +213,13 @@ object StatementParser {
 
     private fun bankTitle(lines: List<String>): String {
         return lines.firstOrNull { line ->
-            line.isNotBlank() && !line.startsWith("UPI/", true) && !line.startsWith("IMPS/", true) && !currencyAmount.matches(line)
-        }?.replace(Regex("\\s+"), " ")?.take(96) ?: "Bank transaction"
+            line.isNotBlank() && !currencyAmount.matches(line)
+        }?.replace(currencyAmount, "")
+            ?.replace(Regex("\\b\\d{8,}\\b"), "••••")
+            ?.replace(Regex("\\s+"), " ")
+            ?.trim()
+            ?.take(96)
+            ?.takeIf { it.isNotBlank() } ?: "Bank transaction"
     }
 
     private fun creditCardCategory(title: String, credit: Boolean): String {
@@ -234,11 +239,15 @@ object StatementParser {
     private fun bankCategory(detail: String, delta: Long): String {
         val normalised = detail.uppercase(Locale.US)
         return when {
-            listOf("UPI/", "IMPS/", "NEFT").any(normalised::contains) -> "Peer transfer - review"
-            listOf("GROWW", "MUTUAL FUND", "SIP", "AUTOPAY").any(normalised::contains) -> "Investments"
+            delta > 0 && normalised.contains("CREDIT CARD") && (normalised.contains("WITHD") || normalised.contains("WITHDRAWAL")) -> "Card balance transfer"
+            delta < 0 && listOf("CREDIT CARD PAYMENT", "CREDIT CARD BILL", "CC BILL PAYMENT").any(normalised::contains) -> "Card settlement"
+            listOf("GROWW", "MUTUAL FUND", "SIP").any(normalised::contains) -> "Investments"
             listOf("SWIGGY", "ZOMATO", "MCD", "RESTAURANT", "CAFE", "GROCERY").any(normalised::contains) -> "Food & grocery"
             listOf("PETROL", "FUEL", "METRO", "UBER", "OLA").any(normalised::contains) -> "Travel"
-            delta > 0 -> "Money received"
+            delta > 0 && normalised.contains("REFUND") -> "Refund / credit"
+            delta > 0 && (normalised.contains("SALARY") || normalised.contains("DIVIDEND")) -> "Income"
+            listOf("UPI/", "IMPS/", "NEFT").any(normalised::contains) -> "Peer transfer - review"
+            delta > 0 -> "Unreviewed credit"
             else -> "Miscellaneous"
         }
     }

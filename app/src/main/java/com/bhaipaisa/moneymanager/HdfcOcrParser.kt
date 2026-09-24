@@ -134,10 +134,14 @@ object HdfcOcrParser {
     private fun category(title: String, delta: Long): String {
         val normalised = title.uppercase(Locale.US)
         return when {
+            delta > 0 && normalised.contains("CREDIT CARD") && (normalised.contains("WITHD") || normalised.contains("WITHDRAWAL")) -> "Card balance transfer"
+            delta < 0 && listOf("CREDIT CARD PAYMENT", "CREDIT CARD BILL", "CC BILL PAYMENT").any(normalised::contains) -> "Card settlement"
+            listOf("GROWW", "MUTUAL", "SIP").any(normalised::contains) -> "Investments"
             listOf("SWIGGY", "ZOMATO", "INSTAMART", "GROCERY", "RESTAURANT", "CAFE").any(normalised::contains) -> "Food & grocery"
             listOf("UPI", "IMPS", "NEFT", "PAYTM", "PHONEPE").any(normalised::contains) -> "Peer transfer - review"
-            listOf("GROWW", "MUTUAL", "SIP").any(normalised::contains) -> "Investments"
-            delta > 0 -> "Money received"
+            delta > 0 && normalised.contains("REFUND") -> "Refund / credit"
+            delta > 0 && (normalised.contains("SALARY") || normalised.contains("DIVIDEND")) -> "Income"
+            delta > 0 -> "Unreviewed credit"
             else -> "Miscellaneous"
         }
     }
