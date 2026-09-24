@@ -253,6 +253,6 @@ object StatementParser {
     }
 
     private fun compactLines(text: String): List<String> = text.lineSequence().map { it.trim().replace(Regex("\\s+"), " ") }.filter { it.isNotBlank() }.toList()
-    private fun paise(amount: String): Long? = (amount.replace(",", "").toDoubleOrNull()?.times(100))?.toLong()
+    private fun paise(amount: String): Long? = rupeesToPaise(amount)
     private fun fingerprint(value: String): String = MessageDigest.getInstance("SHA-256").digest(value.encodeToByteArray()).joinToString("") { "%02x".format(it) }.take(24)
 }

@@ -459,13 +459,13 @@ private fun ClassificationDialog(transaction: Transaction, onDismiss: () -> Unit
 @Composable
 private fun EditorDialog(title: String, firstLabel: String, secondLabel: String, onDismiss: () -> Unit, onConfirm: (String, String, Long) -> Unit) {
     var first by remember { mutableStateOf("") }; var second by remember { mutableStateOf("") }; var amount by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(first, { first = it }, label = { Text(firstLabel) }); OutlinedTextField(second, { second = it }, label = { Text(secondLabel) }); OutlinedTextField(amount, { amount = it }, label = { Text("Amount in ₹ (optional)") }) } }, confirmButton = { Button(onClick = { if (first.isNotBlank()) onConfirm(first.trim(), second.trim(), (amount.toDoubleOrNull()?.times(100))?.toLong() ?: 0L) }) { Text("Save locally") } }, dismissButton = { Button(onClick = onDismiss) { Text("Cancel") } })
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(first, { first = it }, label = { Text(firstLabel) }); OutlinedTextField(second, { second = it }, label = { Text(secondLabel) }); OutlinedTextField(amount, { amount = it }, label = { Text("Amount in ₹ (optional)") }) } }, confirmButton = { Button(onClick = { onConfirm(first.trim(), second.trim(), if (amount.isBlank()) 0L else requireNotNull(rupeesToPaise(amount))) }, enabled = first.isNotBlank() && (amount.isBlank() || rupeesToPaise(amount) != null)) { Text("Save locally") } }, dismissButton = { Button(onClick = onDismiss) { Text("Cancel") } })
 }
 
 @Composable
 private fun AmountDialog(title: String, onDismiss: () -> Unit, onConfirm: (Long) -> Unit) {
     var amount by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = { OutlinedTextField(amount, { amount = it }, label = { Text("Amount in ₹") }) }, confirmButton = { Button(onClick = { amount.toDoubleOrNull()?.let { if (it > 0) onConfirm((it * 100).toLong()) } }) { Text("Save locally") } }, dismissButton = { Button(onClick = onDismiss) { Text("Cancel") } })
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = { OutlinedTextField(amount, { amount = it }, label = { Text("Amount in ₹") }) }, confirmButton = { Button(onClick = { rupeesToPaise(amount)?.let(onConfirm) }, enabled = (rupeesToPaise(amount) ?: 0L) > 0L) { Text("Save locally") } }, dismissButton = { Button(onClick = onDismiss) { Text("Cancel") } })
 }
 
 @Composable

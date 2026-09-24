@@ -120,7 +120,7 @@ object HdfcOcrParser {
         it.page == 0 && it.top < 0.35f && !it.text.startsWith("From", true) && !it.text.startsWith("To", true) && !it.text.startsWith("Statement", true) && !transactionDate.matches(it.text)
     }.joinToString("|") { it.text }
     internal fun accountIdentity(signature: String): String = "HDFC-${fingerprint("HDFC|$signature").take(16).uppercase(Locale.US)}"
-    private fun String.toPaise(): Long? = (replace(",", "").toDoubleOrNull()?.times(100))?.toLong()
+    private fun String.toPaise(): Long? = rupeesToPaise(this)
     private fun String.normalisedTitle(): String = replace(Regex("\\s+"), " ").trim().take(96)
     private fun fingerprint(value: String): String = MessageDigest.getInstance("SHA-256").digest(value.encodeToByteArray()).joinToString("") { "%02x".format(it) }.take(24)
 
