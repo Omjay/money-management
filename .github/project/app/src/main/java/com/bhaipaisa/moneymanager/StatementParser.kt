@@ -1,0 +1,258 @@
+package com.bhaipaisa.moneymanager
+
+import android.content.Context
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.text.PDFTextStripper
+import java.io.File
+import java.security.MessageDigest
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.time.format.ResolverStyle
+import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+internal const val MAX_STATEMENT_PAGES = 50
+
+internal class StatementRejectedException(message: String) : Exception(message)
+
+data class ParsedStatementTransaction(
+    val provider: String,
+    val sourceType: String,
+    val sourceEnding: String,
+    val reference: String,
+    val title: String,
+    val category: String,
+    val amountPaise: Long,
+    val dateEpochDay: Long
+)
+
+data class ParsedStatement(
+    val transactions: List<ParsedStatementTransaction>,
+    val latestBalances: Map<String, Long> = emptyMap(),
+    val latestBalanceDates: Map<String, Long> = emptyMap(),
+    val candidateRows: Int = transactions.size,
+    val unparsedRows: Int = 0
+)
+
+sealed interface StatementParseResult {
+    data class Success(val statement: ParsedStatement) : StatementParseResult
+    data class Unsupported(val reason: String) : StatementParseResult
+}
+
+/**
+ * Parses recognised text-based ICICI statements entirely on the device.
+ * It deliberately does not upload a PDF, retain its password, or create a
+ * transaction when a row cannot be proved from the statement structure.
+ */
+object StatementParser {
+    private val creditDateFormatter = DateTimeFormatter.ofPattern("dd/MM/uuuu", Locale.US).withResolverStyle(ResolverStyle.STRICT)
+    private val bankDateFormatter = DateTimeFormatter.ofPattern("dd-MM-uuuu", Locale.US).withResolverStyle(ResolverStyle.STRICT)
+    private val cardNumber = Regex("\\b\\d{4}X+\\d{4}\\b")
+    private val bankAccount = Regex("Savings A/c\\s+([X0-9]+)", RegexOption.IGNORE_CASE)
+    private val creditRowStart = Regex("^(\\d{2}/\\d{2}/\\d{4})\\s+(\\d+)\\s+(.+)$")
+    private val bankRowStart = Regex("^(\\d{2}-\\d{2}-\\d{4})\\s*(.*)$")
+    private val trailingAmount = Regex("\\s+([0-9][0-9,]*\\.[0-9]{2})\\s*(CR)?\\s*$", RegexOption.IGNORE_CASE)
+    private val trailingPoints = Regex("\\s+-?\\d+(?:\\s+-?\\d+)?\\s*$")
+    private val currencyAmount = Regex("[0-9][0-9,]*\\.[0-9]{2}")
+
+    suspend fun parse(context: Context, source: File, password: String?): StatementParseResult {
+        val text = withContext(Dispatchers.IO) {
+            extractText(context, source, password)
+        }
+        val parsed = when {
+            text.contains("CREDIT CARD STATEMENT", ignoreCase = true) && text.contains("Transaction Details", ignoreCase = true) -> parseIciciCreditCard(text)
+            text.contains("Statement of Transactions in Savings Account", ignoreCase = true) -> parseIciciSavingsAccount(text)
+            else -> null
+        }
+        if (parsed != null && parsed.transactions.isNotEmpty()) return StatementParseResult.Success(parsed)
+        if (password.isNullOrBlank()) {
+            withContext(Dispatchers.Default) { HdfcOcrParser.parse(source) }?.let { return StatementParseResult.Success(it) }
+        }
+        return StatementParseResult.Unsupported(
+            if (password.isNullOrBlank()) "This statement format could not be read. The encrypted source copy was still retained locally."
+            else "This password-protected statement format is not supported yet. The encrypted source copy was still retained locally."
+        )
+    }
+
+    private fun extractText(context: Context, source: File, password: String?): String {
+        PDFBoxResourceLoader.init(context.applicationContext)
+        return try {
+            PDDocument.load(source, password?.takeIf { it.isNotBlank() }).use { document ->
+                if (document.numberOfPages !in 1..MAX_STATEMENT_PAGES) {
+                    throw StatementRejectedException("The statement has too many pages. The limit is $MAX_STATEMENT_PAGES pages.")
+                }
+                PDFTextStripper().getText(document)
+            }
+        } catch (error: StatementRejectedException) {
+            throw error
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    internal fun parseIciciCreditCard(text: String): ParsedStatement {
+        val lines = compactLines(text)
+        val result = mutableListOf<ParsedStatementTransaction>()
+        var candidateRows = 0
+        var unparsedRows = 0
+        var currentCardEnding: String? = null
+        var index = 0
+        while (index < lines.size) {
+            val line = lines[index]
+            cardNumber.find(line)?.value?.let { currentCardEnding = it.takeLast(4) }
+            val match = creditRowStart.matchEntire(line)
+            if (match == null || currentCardEnding == null) {
+                index++
+                continue
+            }
+            candidateRows++
+            val row = StringBuilder(match.groupValues[3])
+            index++
+            while (index < lines.size && creditRowStart.matchEntire(lines[index]) == null && cardNumber.find(lines[index]) == null) {
+                val continuation = lines[index]
+                if (continuation.startsWith("Credit Limit", true) || continuation.startsWith("STATEMENT", true) || continuation.startsWith("Date SerNo", true) || continuation.startsWith("# International Spends", true)) break
+                row.append(' ').append(continuation)
+                index++
+            }
+            val parsed = parseCreditRow(match.groupValues[1], match.groupValues[2], row.toString(), currentCardEnding)
+            if (parsed == null) unparsedRows++ else result += parsed
+        }
+        return ParsedStatement(result.distinctBy { "${it.sourceEnding}|${it.reference}" }, candidateRows = candidateRows, unparsedRows = unparsedRows)
+    }
+
+    private fun parseCreditRow(dateText: String, reference: String, row: String, cardEnding: String): ParsedStatementTransaction? {
+        val amountMatch = trailingAmount.find(row) ?: return null
+        val amountPaise = paise(amountMatch.groupValues[1]) ?: return null
+        val credit = amountMatch.groupValues[2].equals("CR", ignoreCase = true)
+        val beforeAmount = row.substring(0, amountMatch.range.first).replace(trailingPoints, "").trim()
+        if (beforeAmount.isBlank()) return null
+        val title = beforeAmount.replace(Regex("\\s+"), " ").trim()
+        val date = runCatching { LocalDate.parse(dateText, creditDateFormatter) }.getOrNull() ?: return null
+        return ParsedStatementTransaction(
+            provider = "ICICI",
+            sourceType = "credit_card",
+            sourceEnding = cardEnding,
+            reference = reference,
+            title = title,
+            category = creditCardCategory(title, credit),
+            amountPaise = if (credit) amountPaise else -amountPaise,
+            dateEpochDay = date.toEpochDay()
+        )
+    }
+
+    /** Uses balance movement, not PDF column position, to sign ICICI bank rows. */
+    internal fun parseIciciSavingsAccount(text: String): ParsedStatement {
+        val lines = compactLines(text)
+        val transactions = mutableListOf<ParsedStatementTransaction>()
+        val balances = mutableMapOf<String, Long>()
+        val balanceDates = mutableMapOf<String, Long>()
+        var accountEnding: String? = null
+        val previousBalances = mutableMapOf<String, Long>()
+        var candidateRows = 0
+        var unparsedRows = 0
+        var index = 0
+        while (index < lines.size) {
+            bankAccount.find(lines[index])?.groupValues?.getOrNull(1)?.takeLast(4)?.let { accountEnding = it }
+            val match = bankRowStart.matchEntire(lines[index])
+            if (match == null || accountEnding == null) {
+                index++
+                continue
+            }
+            val block = mutableListOf(match.groupValues[2])
+            index++
+            while (index < lines.size && bankRowStart.matchEntire(lines[index]) == null) {
+                val next = lines[index]
+                if (bankAccount.containsMatchIn(next) || next.startsWith("Total:", true) || next.startsWith("Page ", true) || next.startsWith("Statement of", true)) break
+                block += next
+                index++
+            }
+            val detail = block.joinToString(" ").trim()
+            val openingRow = detail.startsWith("B/F", true)
+            if (!openingRow) candidateRows++
+            val amounts = currencyAmount.findAll(detail).mapNotNull { paise(it.value) }.toList()
+            val closingBalance = amounts.lastOrNull()
+            if (closingBalance == null) {
+                if (!openingRow) unparsedRows++
+                continue
+            }
+            val date = runCatching { LocalDate.parse(match.groupValues[1], bankDateFormatter) }.getOrNull()
+            if (date == null) {
+                if (!openingRow) unparsedRows++
+                continue
+            }
+            val dateEpochDay = date.toEpochDay()
+            if (dateEpochDay >= (balanceDates[accountEnding] ?: Long.MIN_VALUE)) {
+                balances[accountEnding] = closingBalance
+                balanceDates[accountEnding] = dateEpochDay
+            }
+            if (openingRow) {
+                previousBalances[accountEnding] = closingBalance
+                continue
+            }
+            val before = previousBalances.put(accountEnding, closingBalance)
+            if (before == null) { unparsedRows++; continue }
+            val delta = closingBalance - before
+            if (delta == 0L) { unparsedRows++; continue }
+            val title = bankTitle(block)
+            val reference = fingerprint("$accountEnding|$date|$detail|$closingBalance")
+            transactions += ParsedStatementTransaction(
+                provider = "ICICI",
+                sourceType = "bank_account",
+                sourceEnding = accountEnding,
+                reference = reference,
+                title = title,
+                category = bankCategory(detail, delta),
+                amountPaise = delta,
+                dateEpochDay = dateEpochDay
+            )
+        }
+        return ParsedStatement(transactions.distinctBy { "${it.sourceEnding}|${it.reference}" }, balances, balanceDates, candidateRows, unparsedRows)
+    }
+
+    private fun bankTitle(lines: List<String>): String {
+        return lines.firstOrNull { line ->
+            line.isNotBlank() && !currencyAmount.matches(line)
+        }?.replace(currencyAmount, "")
+            ?.replace(Regex("\\b\\d{8,}\\b"), "••••")
+            ?.replace(Regex("\\s+"), " ")
+            ?.trim()
+            ?.take(96)
+            ?.takeIf { it.isNotBlank() } ?: "Bank transaction"
+    }
+
+    private fun creditCardCategory(title: String, credit: Boolean): String {
+        val normalised = title.uppercase(Locale.US)
+        if (credit && (normalised.contains("PAYMENT RECEIVED") || normalised.contains("PAYMENT THANK"))) return "Card settlement"
+        if (credit) return "Refund / credit"
+        return when {
+            listOf("SWIGGY", "ZOMATO", "DOMINOS", "INSTAMART", "GROCERY", "RESTAURANT", "CAFE", "CHAAT").any(normalised::contains) -> "Food & grocery"
+            listOf("ANTHROPIC", "MICROSOFT", "NETFLIX", "SPOTIFY", "APPLE.COM", "GOOGLE").any(normalised::contains) -> "Subscriptions"
+            listOf("AMAZON", "FLIPKART", "BATA").any(normalised::contains) -> "Shopping"
+            listOf("UBER", "OLA", "IRCTC", "INDIGO", "AIR", "METRO").any(normalised::contains) -> "Travel"
+            listOf("IGST", "DCC FEE", "FINANCE CHARGE", "LATE FEE").any(normalised::contains) -> "Bank charges"
+            else -> "Miscellaneous"
+        }
+    }
+
+    private fun bankCategory(detail: String, delta: Long): String {
+        val normalised = detail.uppercase(Locale.US)
+        return when {
+            delta > 0 && normalised.contains("CREDIT CARD") && (normalised.contains("WITHD") || normalised.contains("WITHDRAWAL")) -> "Card balance transfer"
+            delta < 0 && listOf("CREDIT CARD PAYMENT", "CREDIT CARD BILL", "CC BILL PAYMENT").any(normalised::contains) -> "Card settlement"
+            listOf("GROWW", "MUTUAL FUND", "SIP").any(normalised::contains) -> "Investments"
+            listOf("SWIGGY", "ZOMATO", "MCD", "RESTAURANT", "CAFE", "GROCERY").any(normalised::contains) -> "Food & grocery"
+            listOf("PETROL", "FUEL", "METRO", "UBER", "OLA").any(normalised::contains) -> "Travel"
+            delta > 0 && normalised.contains("REFUND") -> "Refund / credit"
+            delta > 0 && (normalised.contains("SALARY") || normalised.contains("DIVIDEND")) -> "Income"
+            listOf("UPI/", "IMPS/", "NEFT").any(normalised::contains) -> "Peer transfer - review"
+            delta > 0 -> "Unreviewed credit"
+            else -> "Miscellaneous"
+        }
+    }
+
+    private fun compactLines(text: String): List<String> = text.lineSequence().map { it.trim().replace(Regex("\\s+"), " ") }.filter { it.isNotBlank() }.toList()
+    private fun paise(amount: String): Long? = rupeesToPaise(amount)
+    private fun fingerprint(value: String): String = MessageDigest.getInstance("SHA-256").digest(value.encodeToByteArray()).joinToString("") { "%02x".format(it) }.take(24)
+}

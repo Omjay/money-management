@@ -9,6 +9,9 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .github/project
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -22,34 +25,37 @@ jobs:
       - name: Require private signing secrets
         shell: bash
         env:
-          BHAIPAISA_KEYSTORE_BASE64: ${{ secrets.BHAIPAISA_KEYSTORE_BASE64 }}
-          BHAIPAISA_SIGNING_STORE_PASSWORD: ${{ secrets.BHAIPAISA_SIGNING_STORE_PASSWORD }}
-          BHAIPAISA_SIGNING_KEY_ALIAS: ${{ secrets.BHAIPAISA_SIGNING_KEY_ALIAS }}
-          BHAIPAISA_SIGNING_KEY_PASSWORD: ${{ secrets.BHAIPAISA_SIGNING_KEY_PASSWORD }}
+          HISAAB_KEYSTORE_BASE64: ${{ secrets.HISAAB_KEYSTORE_BASE64 }}
+          HISAAB_SIGNING_STORE_PASSWORD: ${{ secrets.HISAAB_SIGNING_STORE_PASSWORD }}
+          HISAAB_SIGNING_KEY_ALIAS: ${{ secrets.HISAAB_SIGNING_KEY_ALIAS }}
+          HISAAB_SIGNING_KEY_PASSWORD: ${{ secrets.HISAAB_SIGNING_KEY_PASSWORD }}
         run: |
-          test -n "$BHAIPAISA_KEYSTORE_BASE64"
-          test -n "$BHAIPAISA_SIGNING_STORE_PASSWORD"
-          test -n "$BHAIPAISA_SIGNING_KEY_ALIAS"
-          test -n "$BHAIPAISA_SIGNING_KEY_PASSWORD"
+          test -n "$HISAAB_KEYSTORE_BASE64"
+          test -n "$HISAAB_SIGNING_STORE_PASSWORD"
+          test -n "$HISAAB_SIGNING_KEY_ALIAS"
+          test -n "$HISAAB_SIGNING_KEY_PASSWORD"
       - name: Restore private signing key
         shell: bash
         env:
-          BHAIPAISA_KEYSTORE_BASE64: ${{ secrets.BHAIPAISA_KEYSTORE_BASE64 }}
-          BHAIPAISA_SIGNING_STORE_FILE: ${{ runner.temp }}/bhaipaisa-release.jks
-        run: printf '%s' "$BHAIPAISA_KEYSTORE_BASE64" | base64 --decode > "$BHAIPAISA_SIGNING_STORE_FILE"
+          HISAAB_KEYSTORE_BASE64: ${{ secrets.HISAAB_KEYSTORE_BASE64 }}
+          HISAAB_SIGNING_STORE_FILE: ${{ runner.temp }}/hisaab-release.p12
+        run: printf '%s' "$HISAAB_KEYSTORE_BASE64" | base64 --decode > "$HISAAB_SIGNING_STORE_FILE"
       - name: Test and build signed release
         env:
-          BHAIPAISA_SIGNING_STORE_FILE: ${{ runner.temp }}/bhaipaisa-release.jks
-          BHAIPAISA_SIGNING_STORE_PASSWORD: ${{ secrets.BHAIPAISA_SIGNING_STORE_PASSWORD }}
-          BHAIPAISA_SIGNING_KEY_ALIAS: ${{ secrets.BHAIPAISA_SIGNING_KEY_ALIAS }}
-          BHAIPAISA_SIGNING_KEY_PASSWORD: ${{ secrets.BHAIPAISA_SIGNING_KEY_PASSWORD }}
+          HISAAB_SIGNING_STORE_FILE: ${{ runner.temp }}/hisaab-release.p12
+          HISAAB_SIGNING_STORE_PASSWORD: ${{ secrets.HISAAB_SIGNING_STORE_PASSWORD }}
+          HISAAB_SIGNING_KEY_ALIAS: ${{ secrets.HISAAB_SIGNING_KEY_ALIAS }}
+          HISAAB_SIGNING_KEY_PASSWORD: ${{ secrets.HISAAB_SIGNING_KEY_PASSWORD }}
         run: ./gradlew testDebugUnitTest assembleRelease --no-daemon
       - name: Verify release signature and manifest
         shell: bash
         run: |
           APK=app/build/outputs/apk/release/app-release.apk
           test -f "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          SIGNATURE=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK")
+          printf '%s\n' "$SIGNATURE"
+          printf '%s\n' "$SIGNATURE" | grep -Fq '889aceb4f478bbfd13119788955ff0d4f2e584723d06c8415e15a7ec82cf523b'
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -Fq "application-label:'Hisaab'"
           if "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q application-debuggable; then
             echo "Release APK is unexpectedly debuggable" >&2
             exit 1
@@ -61,13 +67,13 @@ jobs:
       - name: Upload verified APK
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: BhaiPaisa-private-release
-          path: app/build/outputs/apk/release/app-release.apk
+          name: Hisaab-private-release
+          path: .github/project/app/build/outputs/apk/release/app-release.apk
           archive: false
           if-no-files-found: error
       - name: Remove signing key
         if: always()
         shell: bash
         env:
-          BHAIPAISA_SIGNING_STORE_FILE: ${{ runner.temp }}/bhaipaisa-release.jks
-        run: rm -f "$BHAIPAISA_SIGNING_STORE_FILE"
+          HISAAB_SIGNING_STORE_FILE: ${{ runner.temp }}/hisaab-release.p12
+        run: rm -f "$HISAAB_SIGNING_STORE_FILE"
