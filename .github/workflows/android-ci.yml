@@ -23,6 +23,15 @@ jobs:
         uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37 # v6
       - name: Test and build release
         run: ./gradlew testDebugUnitTest assembleRelease --no-daemon
+      - name: Verify release APK permissions
+        shell: bash
+        run: |
+          APK=$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -print -quit)
+          test -n "$APK"
+          if "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$APK" | grep -Eq 'android.permission.(INTERNET|ACCESS_NETWORK_STATE|READ_SMS|READ_CONTACTS|READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE)'; then
+            echo "Release APK contains a forbidden permission" >&2
+            exit 1
+          fi
       - name: Verify repository privacy
         shell: pwsh
         run: ./scripts/verify_repository_privacy.ps1

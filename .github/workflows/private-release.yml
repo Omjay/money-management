@@ -54,7 +54,7 @@ jobs:
             echo "Release APK is unexpectedly debuggable" >&2
             exit 1
           fi
-          if "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$APK" | grep -Eq 'android.permission.(INTERNET|READ_SMS|READ_CONTACTS|READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE)'; then
+          if "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$APK" | grep -Eq 'android.permission.(INTERNET|ACCESS_NETWORK_STATE|READ_SMS|READ_CONTACTS|READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE)'; then
             echo "Release APK contains a forbidden permission" >&2
             exit 1
           fi
