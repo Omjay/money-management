@@ -30,7 +30,10 @@ data class ParsedStatementTransaction(
 
 data class ParsedStatement(
     val transactions: List<ParsedStatementTransaction>,
-    val latestBalances: Map<String, Long> = emptyMap()
+    val latestBalances: Map<String, Long> = emptyMap(),
+    val latestBalanceDates: Map<String, Long> = emptyMap(),
+    val candidateRows: Int = transactions.size,
+    val unparsedRows: Int = 0
 )
 
 sealed interface StatementParseResult {
@@ -92,6 +95,8 @@ object StatementParser {
     internal fun parseIciciCreditCard(text: String): ParsedStatement {
         val lines = compactLines(text)
         val result = mutableListOf<ParsedStatementTransaction>()
+        var candidateRows = 0
+        var unparsedRows = 0
         var currentCardEnding: String? = null
         var index = 0
         while (index < lines.size) {
@@ -102,17 +107,19 @@ object StatementParser {
                 index++
                 continue
             }
+            candidateRows++
             val row = StringBuilder(match.groupValues[3])
             index++
             while (index < lines.size && creditRowStart.matchEntire(lines[index]) == null && cardNumber.find(lines[index]) == null) {
                 val continuation = lines[index]
-                if (continuation.startsWith("Credit Limit", true) || continuation.startsWith("STATEMENT", true) || continuation.startsWith("Date SerNo", true)) break
+                if (continuation.startsWith("Credit Limit", true) || continuation.startsWith("STATEMENT", true) || continuation.startsWith("Date SerNo", true) || continuation.startsWith("# International Spends", true)) break
                 row.append(' ').append(continuation)
                 index++
             }
-            parseCreditRow(match.groupValues[1], match.groupValues[2], row.toString(), currentCardEnding)?.let(result::add)
+            val parsed = parseCreditRow(match.groupValues[1], match.groupValues[2], row.toString(), currentCardEnding)
+            if (parsed == null) unparsedRows++ else result += parsed
         }
-        return ParsedStatement(result.distinctBy { "${it.sourceEnding}|${it.reference}" })
+        return ParsedStatement(result.distinctBy { "${it.sourceEnding}|${it.reference}" }, candidateRows = candidateRows, unparsedRows = unparsedRows)
     }
 
     private fun parseCreditRow(dateText: String, reference: String, row: String, cardEnding: String): ParsedStatementTransaction? {
@@ -140,8 +147,11 @@ object StatementParser {
         val lines = compactLines(text)
         val transactions = mutableListOf<ParsedStatementTransaction>()
         val balances = mutableMapOf<String, Long>()
+        val balanceDates = mutableMapOf<String, Long>()
         var accountEnding: String? = null
         val previousBalances = mutableMapOf<String, Long>()
+        var candidateRows = 0
+        var unparsedRows = 0
         var index = 0
         while (index < lines.size) {
             bankAccount.find(lines[index])?.groupValues?.getOrNull(1)?.takeLast(4)?.let { accountEnding = it }
@@ -158,19 +168,33 @@ object StatementParser {
                 block += next
                 index++
             }
-            val amounts = currencyAmount.findAll(block.joinToString(" ")).mapNotNull { paise(it.value) }.toList()
-            val closingBalance = amounts.lastOrNull() ?: continue
-            balances[accountEnding] = closingBalance
-            val date = runCatching { LocalDate.parse(match.groupValues[1], bankDateFormatter) }.getOrNull() ?: continue
             val detail = block.joinToString(" ").trim()
-            if (detail.startsWith("B/F", true)) {
+            val openingRow = detail.startsWith("B/F", true)
+            if (!openingRow) candidateRows++
+            val amounts = currencyAmount.findAll(detail).mapNotNull { paise(it.value) }.toList()
+            val closingBalance = amounts.lastOrNull()
+            if (closingBalance == null) {
+                if (!openingRow) unparsedRows++
+                continue
+            }
+            val date = runCatching { LocalDate.parse(match.groupValues[1], bankDateFormatter) }.getOrNull()
+            if (date == null) {
+                if (!openingRow) unparsedRows++
+                continue
+            }
+            val dateEpochDay = date.toEpochDay()
+            if (dateEpochDay >= (balanceDates[accountEnding] ?: Long.MIN_VALUE)) {
+                balances[accountEnding] = closingBalance
+                balanceDates[accountEnding] = dateEpochDay
+            }
+            if (openingRow) {
                 previousBalances[accountEnding] = closingBalance
                 continue
             }
             val before = previousBalances.put(accountEnding, closingBalance)
-            if (before == null) continue
+            if (before == null) { unparsedRows++; continue }
             val delta = closingBalance - before
-            if (delta == 0L) continue
+            if (delta == 0L) { unparsedRows++; continue }
             val title = bankTitle(block)
             val reference = fingerprint("$accountEnding|$date|$detail|$closingBalance")
             transactions += ParsedStatementTransaction(
@@ -181,10 +205,10 @@ object StatementParser {
                 title = title,
                 category = bankCategory(detail, delta),
                 amountPaise = delta,
-                dateEpochDay = date.toEpochDay()
+                dateEpochDay = dateEpochDay
             )
         }
-        return ParsedStatement(transactions.distinctBy { "${it.sourceEnding}|${it.reference}" }, balances)
+        return ParsedStatement(transactions.distinctBy { "${it.sourceEnding}|${it.reference}" }, balances, balanceDates, candidateRows, unparsedRows)
     }
 
     private fun bankTitle(lines: List<String>): String {

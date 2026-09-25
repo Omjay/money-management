@@ -28,7 +28,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
-data class Account(val id: String, val name: String, val type: String, val ending: String = "", val balancePaise: Long = 0, val provider: String = "")
+data class Account(val id: String, val name: String, val type: String, val ending: String = "", val balancePaise: Long = 0, val provider: String = "", val balanceDateEpochDay: Long? = null)
 data class CreditCard(val id: String, val name: String, val ending: String = "", val limitPaise: Long = 0, val provider: String = "")
 data class Loan(val id: String, val personName: String, val principalPaise: Long, val repaidPaise: Long = 0)
 data class Transaction(
@@ -46,7 +46,9 @@ data class StatementImport(
     val displayName: String,
     val importedAt: Long,
     val parseStatus: String,
-    val parsedTransactionCount: Int
+    val parsedTransactionCount: Int,
+    val candidateRows: Int = 0,
+    val unparsedRows: Int = 0
 )
 data class AppState(
     val accounts: List<Account> = emptyList(),
@@ -62,6 +64,9 @@ data class ImportOutcome(val state: AppState, val message: String)
 internal const val VAULT_AUTH_VALIDITY_SECONDS = 300
 internal const val MAX_STATEMENT_BYTES = 20L * 1024L * 1024L
 private const val IMPORT_TIMEOUT_MILLIS = 45_000L
+
+internal fun shouldReplaceBalance(existingDate: Long?, incomingDate: Long?): Boolean =
+    incomingDate != null && (existingDate == null || incomingDate > existingDate)
 
 internal fun copyBounded(input: InputStream, output: OutputStream, maxBytes: Long): Long {
     require(maxBytes > 0)
@@ -176,7 +181,9 @@ class FinanceStore(private val context: Context) {
             if (balanceProvider != null) parsedStatement.latestBalances.forEach { (ending, balance) ->
                 val key = providerKey(balanceProvider, ending)
                 accountBySource[key]?.let { currentAccount ->
-                    val updatedAccount = currentAccount.copy(balancePaise = balance)
+                    val balanceDate = parsedStatement.latestBalanceDates[ending]
+                    if (!shouldReplaceBalance(currentAccount.balanceDateEpochDay, balanceDate)) return@let
+                    val updatedAccount = currentAccount.copy(balancePaise = balance, balanceDateEpochDay = balanceDate)
                     val index = accounts.indexOfFirst { it.id == currentAccount.id }
                     if (index >= 0) accounts[index] = updatedAccount
                     accountBySource[key] = updatedAccount
@@ -211,7 +218,7 @@ class FinanceStore(private val context: Context) {
                 accounts = accounts,
                 cards = cards,
                 transactions = current.transactions + newTransactions,
-                imports = current.imports + StatementImport(importId, displayName, System.currentTimeMillis(), status, newTransactions.size)
+                imports = current.imports + StatementImport(importId, displayName, System.currentTimeMillis(), status, newTransactions.size, parsedStatement.candidateRows, parsedStatement.unparsedRows)
             )
             try {
                 withContext(Dispatchers.IO) { save(updated) }
@@ -220,7 +227,7 @@ class FinanceStore(private val context: Context) {
                 return ImportOutcome(current, "The import was rolled back because the encrypted vault could not be updated.")
             }
             val message = if (parsed is StatementParseResult.Success) {
-                "Saved encrypted source and added ${newTransactions.size} new transaction(s)."
+                "Saved encrypted source. Found ${parsedStatement.candidateRows} row(s), added ${newTransactions.size} new transaction(s), and could not parse ${parsedStatement.unparsedRows} row(s). Review the import counts before relying on totals."
             } else "Saved an encrypted source copy. $status"
             return ImportOutcome(updated, message)
         } finally {
@@ -283,11 +290,11 @@ class FinanceStore(private val context: Context) {
     }
 
     private fun encode(state: AppState): String = JSONObject().apply {
-        put("accounts", JSONArray(state.accounts.map { JSONObject().apply { put("id", it.id); put("name", it.name); put("type", it.type); put("ending", it.ending); put("balance", it.balancePaise); put("provider", it.provider) } }))
+        put("accounts", JSONArray(state.accounts.map { JSONObject().apply { put("id", it.id); put("name", it.name); put("type", it.type); put("ending", it.ending); put("balance", it.balancePaise); put("provider", it.provider); it.balanceDateEpochDay?.let { date -> put("balanceDate", date) } } }))
         put("cards", JSONArray(state.cards.map { JSONObject().apply { put("id", it.id); put("name", it.name); put("ending", it.ending); put("limit", it.limitPaise); put("provider", it.provider) } }))
         put("loans", JSONArray(state.loans.map { JSONObject().apply { put("id", it.id); put("person", it.personName); put("principal", it.principalPaise); put("repaid", it.repaidPaise) } }))
         put("transactions", JSONArray(state.transactions.map { JSONObject().apply { put("id", it.id); put("sourceId", it.sourceId); put("sourceType", it.sourceType); put("reference", it.sourceReference); put("title", it.title); put("category", it.category); put("amount", it.amountPaise); put("date", it.dateEpochDay) } }))
-        put("imports", JSONArray(state.imports.map { JSONObject().apply { put("id", it.id); put("name", it.displayName); put("at", it.importedAt); put("status", it.parseStatus); put("count", it.parsedTransactionCount) } }))
+        put("imports", JSONArray(state.imports.map { JSONObject().apply { put("id", it.id); put("name", it.displayName); put("at", it.importedAt); put("status", it.parseStatus); put("count", it.parsedTransactionCount); put("candidates", it.candidateRows); put("unparsed", it.unparsedRows) } }))
     }.toString()
 
     private fun decode(json: String): AppState {
@@ -298,11 +305,11 @@ class FinanceStore(private val context: Context) {
             for (index in 0 until source.length()) add(mapper(source.getJSONObject(index)))
         }
         return AppState(
-            accounts = items("accounts") { Account(it.getString("id"), it.getString("name"), it.getString("type"), it.optString("ending"), it.optLong("balance"), it.optString("provider")) },
+            accounts = items("accounts") { Account(it.getString("id"), it.getString("name"), it.getString("type"), it.optString("ending"), it.optLong("balance"), it.optString("provider"), if (it.has("balanceDate")) it.getLong("balanceDate") else null) },
             cards = items("cards") { CreditCard(it.getString("id"), it.getString("name"), it.optString("ending"), it.optLong("limit"), it.optString("provider")) },
             loans = items("loans") { Loan(it.getString("id"), it.getString("person"), it.getLong("principal"), it.optLong("repaid")) },
             transactions = items("transactions") { Transaction(it.getString("id"), it.getString("sourceId"), it.getString("sourceType"), it.optString("reference", it.getString("id")), it.getString("title"), it.getString("category"), it.getLong("amount"), it.getLong("date")) },
-            imports = items("imports") { StatementImport(it.getString("id"), it.getString("name"), it.getLong("at"), it.optString("status", "Imported"), it.optInt("count")) }
+            imports = items("imports") { StatementImport(it.getString("id"), it.getString("name"), it.getLong("at"), it.optString("status", "Imported"), it.optInt("count"), it.optInt("candidates"), it.optInt("unparsed")) }
         )
     }
 }

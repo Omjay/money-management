@@ -35,6 +35,38 @@ class SecurityRegressionTest {
     }
 
     @Test
+    fun cardRowImmediatelyBeforeNextSectionIsNotLost() {
+        val statement = """
+            1234XXXX5678
+            CREDIT CARD STATEMENT
+            Transaction Details
+            28/02/2026 1001 Example merchant 100.00
+            # International Spends
+            No transactions
+        """.trimIndent()
+
+        val parsed = StatementParser.parseIciciCreditCard(statement)
+        assertEquals(1, parsed.transactions.size)
+        assertEquals(1, parsed.candidateRows)
+        assertEquals(0, parsed.unparsedRows)
+    }
+
+    @Test
+    fun unparsedCardRowsAreCountedWithoutRetainingTheirText() {
+        val statement = """
+            1234XXXX5678
+            CREDIT CARD STATEMENT
+            Transaction Details
+            28/02/2026 1001 Broken amount
+        """.trimIndent()
+
+        val parsed = StatementParser.parseIciciCreditCard(statement)
+        assertEquals(1, parsed.candidateRows)
+        assertEquals(1, parsed.unparsedRows)
+        assertTrue(parsed.transactions.isEmpty())
+    }
+
+    @Test
     fun savingsBalancesRemainIsolatedPerAccount() {
         val statement = """
             Savings A/c XXXX1111
@@ -53,6 +85,17 @@ class SecurityRegressionTest {
         assertEquals(listOf(-10_000L, -10_000L), accountOne.map { it.amountPaise })
         assertEquals(80_000L, parsed.latestBalances["1111"])
         assertEquals(250_000L, parsed.latestBalances["2222"])
+        assertEquals(java.time.LocalDate.of(2026, 1, 3).toEpochDay(), parsed.latestBalanceDates["1111"])
+    }
+
+    @Test
+    fun olderStatementCannotReplaceNewerBalance() {
+        val newer = java.time.LocalDate.of(2026, 3, 1).toEpochDay()
+        val older = java.time.LocalDate.of(2026, 2, 1).toEpochDay()
+        assertTrue(shouldReplaceBalance(null, older))
+        assertTrue(!shouldReplaceBalance(newer, older))
+        assertTrue(!shouldReplaceBalance(newer, null))
+        assertTrue(shouldReplaceBalance(older, newer))
     }
 
     @Test

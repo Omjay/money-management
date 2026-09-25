@@ -9,8 +9,6 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    env:
-      BHAIPAISA_SIGNING_STORE_FILE: ${{ runner.temp }}/bhaipaisa-release.jks
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -37,9 +35,11 @@ jobs:
         shell: bash
         env:
           BHAIPAISA_KEYSTORE_BASE64: ${{ secrets.BHAIPAISA_KEYSTORE_BASE64 }}
+          BHAIPAISA_SIGNING_STORE_FILE: ${{ runner.temp }}/bhaipaisa-release.jks
         run: printf '%s' "$BHAIPAISA_KEYSTORE_BASE64" | base64 --decode > "$BHAIPAISA_SIGNING_STORE_FILE"
       - name: Test and build signed release
         env:
+          BHAIPAISA_SIGNING_STORE_FILE: ${{ runner.temp }}/bhaipaisa-release.jks
           BHAIPAISA_SIGNING_STORE_PASSWORD: ${{ secrets.BHAIPAISA_SIGNING_STORE_PASSWORD }}
           BHAIPAISA_SIGNING_KEY_ALIAS: ${{ secrets.BHAIPAISA_SIGNING_KEY_ALIAS }}
           BHAIPAISA_SIGNING_KEY_PASSWORD: ${{ secrets.BHAIPAISA_SIGNING_KEY_PASSWORD }}
@@ -68,4 +68,6 @@ jobs:
       - name: Remove signing key
         if: always()
         shell: bash
+        env:
+          BHAIPAISA_SIGNING_STORE_FILE: ${{ runner.temp }}/bhaipaisa-release.jks
         run: rm -f "$BHAIPAISA_SIGNING_STORE_FILE"
