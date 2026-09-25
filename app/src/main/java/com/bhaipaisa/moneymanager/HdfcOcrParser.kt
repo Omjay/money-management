@@ -120,7 +120,7 @@ object HdfcOcrParser {
         it.page == 0 && it.top < 0.35f && !it.text.startsWith("From", true) && !it.text.startsWith("To", true) && !it.text.startsWith("Statement", true) && !transactionDate.matches(it.text)
     }.joinToString("|") { it.text }
     internal fun accountIdentity(signature: String): String = "HDFC-${fingerprint("HDFC|$signature").take(16).uppercase(Locale.US)}"
-    private fun String.toPaise(): Long? = (replace(",", "").toDoubleOrNull()?.times(100))?.toLong()
+    private fun String.toPaise(): Long? = rupeesToPaise(this)
     private fun String.normalisedTitle(): String = replace(Regex("\\s+"), " ").trim().take(96)
     private fun fingerprint(value: String): String = MessageDigest.getInstance("SHA-256").digest(value.encodeToByteArray()).joinToString("") { "%02x".format(it) }.take(24)
 
@@ -134,10 +134,14 @@ object HdfcOcrParser {
     private fun category(title: String, delta: Long): String {
         val normalised = title.uppercase(Locale.US)
         return when {
+            delta > 0 && normalised.contains("CREDIT CARD") && (normalised.contains("WITHD") || normalised.contains("WITHDRAWAL")) -> "Card balance transfer"
+            delta < 0 && listOf("CREDIT CARD PAYMENT", "CREDIT CARD BILL", "CC BILL PAYMENT").any(normalised::contains) -> "Card settlement"
+            listOf("GROWW", "MUTUAL", "SIP").any(normalised::contains) -> "Investments"
             listOf("SWIGGY", "ZOMATO", "INSTAMART", "GROCERY", "RESTAURANT", "CAFE").any(normalised::contains) -> "Food & grocery"
             listOf("UPI", "IMPS", "NEFT", "PAYTM", "PHONEPE").any(normalised::contains) -> "Peer transfer - review"
-            listOf("GROWW", "MUTUAL", "SIP").any(normalised::contains) -> "Investments"
-            delta > 0 -> "Money received"
+            delta > 0 && normalised.contains("REFUND") -> "Refund / credit"
+            delta > 0 && (normalised.contains("SALARY") || normalised.contains("DIVIDEND")) -> "Income"
+            delta > 0 -> "Unreviewed credit"
             else -> "Miscellaneous"
         }
     }
