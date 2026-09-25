@@ -23,3 +23,12 @@ for entry in 'home:0' 'money:1' 'cards:2' 'people:3' 'insights:4'; do
   adb shell screencap -p "/sdcard/${name}.png"
   adb pull "/sdcard/${name}.png" "$OUT/${name}.png" >/dev/null
 done
+
+# The public release is separate from the debug demo. Smoke-test installation
+# and launch without attempting to bypass its real device-lock requirement.
+if [ -f Hisaab.apk ]; then
+  adb install Hisaab.apk
+  adb shell am start -n com.bhaipaisa.moneymanager/com.bhaipaisa.moneymanager.MainActivity
+  sleep 3
+  adb shell pidof com.bhaipaisa.moneymanager >/dev/null
+fi
