@@ -14,6 +14,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "MoneyManagement"
+rootProject.name = "Hisaab"
 include(":app")
 

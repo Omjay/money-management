@@ -74,7 +74,7 @@ class SecurityRegressionTest {
             02-01-2026 Grocery 900.00
             Savings A/c XXXX2222
             01-01-2026 B/F 2,000.00
-            02-01-2026 Salary 2,500.00
+            02-01-2026 Example Credit 2,500.00
             Savings A/c XXXX1111
             03-01-2026 Cafe 800.00
         """.trimIndent()

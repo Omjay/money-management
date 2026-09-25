@@ -72,6 +72,7 @@ import java.util.UUID
 import kotlinx.coroutines.launch
 
 class MainActivity : FragmentActivity() {
+    private var demoState: AppState? = null
     private var unlocked by mutableStateOf(false)
     private var unlockError by mutableStateOf<String?>(null)
     private var authenticationInProgress = false
@@ -82,7 +83,8 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        demoState = DemoFixtures.stateOrNull(intent)
+        if (demoState == null) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         enableEdgeToEdge()
         store = FinanceStore(applicationContext)
         biometricPrompt = BiometricPrompt(this, ContextCompat.getMainExecutor(this), object : BiometricPrompt.AuthenticationCallback() {
@@ -103,13 +105,13 @@ class MainActivity : FragmentActivity() {
             }
         })
         setContent {
-            if (unlocked) MoneyManagerApp(store) else VaultLockedScreen(unlockError, onUnlock = ::requestUnlock)
+            if (unlocked || demoState != null) HisaabApp(store, demoState) else VaultLockedScreen(unlockError, onUnlock = ::requestUnlock)
         }
     }
 
     override fun onStart() {
         super.onStart()
-        if (!unlocked && !authenticationInProgress) requestUnlock()
+        if (demoState == null && !unlocked && !authenticationInProgress) requestUnlock()
     }
 
     override fun onStop() {
@@ -125,7 +127,7 @@ class MainActivity : FragmentActivity() {
         val keyguard = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
         if (!keyguard.isDeviceSecure) {
             authenticationInProgress = false
-            unlockError = "Set a phone PIN, pattern, or password before using BhaiPaisa."
+            unlockError = "Set a phone PIN, pattern, or password before using Hisaab."
             return
         }
         runCatching { store.prepareForAuthentication() }.onFailure {
@@ -134,7 +136,7 @@ class MainActivity : FragmentActivity() {
             return
         }
         val prompt = BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Unlock BhaiPaisa")
+            .setTitle("Unlock Hisaab")
             .setSubtitle("Use your phone's secure lock to open the local vault")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             prompt.setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
@@ -153,7 +155,7 @@ private fun VaultLockedScreen(error: String?, onUnlock: () -> Unit) {
             modifier = Modifier.fillMaxSize().padding(32.dp),
             verticalArrangement = Arrangement.Center
         ) {
-            Text("BhaiPaisa is locked", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            Text("Hisaab is locked", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
             Text("Your local financial vault opens only after biometric or device-credential authentication.", modifier = Modifier.padding(vertical = 12.dp))
             error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 12.dp)) }
             Button(onClick = onUnlock) { Text("Unlock") }
@@ -165,8 +167,8 @@ private enum class Destination(val label: String) { HOME("Home"), ACCOUNTS("Mone
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MoneyManagerApp(store: FinanceStore) {
-    val loadedVault = remember { store.load() }
+private fun HisaabApp(store: FinanceStore, demoState: AppState? = null) {
+    val loadedVault = remember { demoState?.let { VaultLoad(it) } ?: store.load() }
     var state by remember { mutableStateOf(loadedVault.state) }
     var vaultError by remember { mutableStateOf(loadedVault.error) }
     var destination by rememberSaveable { mutableStateOf(Destination.HOME) }
@@ -182,7 +184,9 @@ private fun MoneyManagerApp(store: FinanceStore) {
         }
     }
     fun update(next: AppState) {
-        if (vaultError == null) {
+        if (demoState != null) {
+            state = next
+        } else if (vaultError == null) {
             runCatching { store.save(next) }
                 .onSuccess { state = next }
                 .onFailure { vaultError = "The encrypted vault could not be updated. No changes were saved." }
@@ -191,7 +195,7 @@ private fun MoneyManagerApp(store: FinanceStore) {
 
     MaterialTheme(colorScheme = androidx.compose.material3.lightColorScheme(primary = Color(0xFF0876D1))) {
         Scaffold(
-            topBar = { TopAppBar(title = { Text(destination.label) }) },
+            topBar = { TopAppBar(title = { Text(if (demoState == null) "Hisaab · ${destination.label}" else "Hisaab demo · ${destination.label}") }) },
             bottomBar = {
                 NavigationBar {
                     listOf(Destination.HOME, Destination.ACCOUNTS, Destination.CARDS, Destination.PEOPLE, Destination.INSIGHTS).forEach { item ->

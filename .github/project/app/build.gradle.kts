@@ -4,10 +4,10 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val releaseStorePath = providers.environmentVariable("BHAIPAISA_SIGNING_STORE_FILE").orNull
-val releaseStorePassword = providers.environmentVariable("BHAIPAISA_SIGNING_STORE_PASSWORD").orNull
-val releaseKeyAlias = providers.environmentVariable("BHAIPAISA_SIGNING_KEY_ALIAS").orNull
-val releaseKeyPassword = providers.environmentVariable("BHAIPAISA_SIGNING_KEY_PASSWORD").orNull
+val releaseStorePath = providers.environmentVariable("HISAAB_SIGNING_STORE_FILE").orNull
+val releaseStorePassword = providers.environmentVariable("HISAAB_SIGNING_STORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("HISAAB_SIGNING_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("HISAAB_SIGNING_KEY_PASSWORD").orNull
 val privateReleaseSigningAvailable = listOf(releaseStorePath, releaseStorePassword, releaseKeyAlias, releaseKeyPassword).all { !it.isNullOrBlank() }
 
 android {
@@ -28,6 +28,7 @@ android {
         if (privateReleaseSigningAvailable) {
             create("privateRelease") {
                 storeFile = file(requireNotNull(releaseStorePath))
+                storeType = "pkcs12"
                 storePassword = requireNotNull(releaseStorePassword)
                 keyAlias = requireNotNull(releaseKeyAlias)
                 keyPassword = requireNotNull(releaseKeyPassword)
