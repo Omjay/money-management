@@ -4,9 +4,11 @@ Hisaab is a private Android money overview built around statements you choose to
 
 ## Download and install
 
-Download **[Hisaab.apk](./Hisaab.apk)** from this page. On GitHub, open the APK and choose **Download raw file** (or use the file's three-dot menu). Open the downloaded file on your Android phone and confirm Android's installation prompt. Install only the signed release APK from this repository, not a debug build. If Android reports an unexpected signer or asks for permissions beyond local files and device authentication, stop and review the build.
+Download **[Hisaab.apk](./Hisaab.apk)** from this page. On GitHub, open the APK and choose **Download raw file** (or use the file's three-dot menu). Open the downloaded file on your Android phone and confirm Android's installation prompt. If Android asks to allow this browser or file manager to install apps, enable it only for this installation and turn it off afterward. Install only the signed release APK from this repository, not a debug build. If Android reports an unexpected signer or asks for permissions beyond local files and device authentication, stop and review the build.
 
 The APK is built from this repository, signed with a private key that is **not** committed here, and checked for a non-debuggable manifest and forbidden permissions. The source and build instructions are in [`.github/project`](./.github/project); GitHub Actions must remain in [`.github/workflows`](./.github/workflows), which is why the one visible folder at the root is `.github`.
+
+For this APK, SHA-256 is `95d676e96b396ec16b1f784af5da49b39003cf8626626f5a16dfcd6c6349e8e3`. The signing certificate SHA-256 is `889aceb4f478bbfd13119788955ff0d4f2e584723d06c8415e15a7ec82cf523b`.
 
 ## See the app
 

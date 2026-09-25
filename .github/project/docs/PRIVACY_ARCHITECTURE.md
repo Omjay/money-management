@@ -28,7 +28,7 @@ Do not add either permission to v1. Google Play restricts SMS access; a money-ma
 
 | Risk | Design response |
 | --- | --- |
-| Lost/stolen unlocked phone | Encrypted vault; optional future biometric gate before decrypting. |
+| Lost/stolen unlocked phone | Encrypted vault; current app requires a secure device lock or biometric prompt before opening it. |
 | App backup or shared storage leak | Store only inside internal app storage; `allowBackup=false`; no external storage. |
 | Hard-coded key extraction | Generate non-exportable AES key in Android Keystore. |
 | Duplicate imports | Persist a deterministic provider/card/reference key before inserting a normalised transaction. |
