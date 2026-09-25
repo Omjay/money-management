@@ -11,7 +11,7 @@
         android:fullBackupContent="@xml/backup_rules"
         android:label="Hisaab"
         android:usesCleartextTraffic="false"
-        android:theme="@style/Theme.MoneyManagement">
+        android:theme="@style/Theme.Hisaab">
         <activity
             android:name=".MainActivity"
             android:exported="true">

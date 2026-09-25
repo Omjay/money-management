@@ -9,6 +9,13 @@ $blockedContent = @(
 
 $repoRoot = (git rev-parse --show-toplevel).Trim()
 $tracked = @(git -C $repoRoot ls-files)
+if ($tracked -contains 'Hisaab.apk') {
+    $rootEntries = @($tracked | ForEach-Object { ($_ -split '/')[0] } | Sort-Object -Unique)
+    $expectedRootEntries = @('.github', 'Hisaab.apk', 'README.md')
+    if (Compare-Object -ReferenceObject $expectedRootEntries -DifferenceObject $rootEntries) {
+        throw "Repository root must contain only .github, README.md, and Hisaab.apk. Found: $($rootEntries -join ', ')"
+    }
+}
 $pathHits = $tracked | Where-Object { $_ -match $blockedPaths -and $_ -ne 'Hisaab.apk' }
 if ($pathHits) {
     throw "Tracked private artifact path(s): $($pathHits -join ', ')"

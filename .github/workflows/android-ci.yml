@@ -35,6 +35,25 @@ jobs:
             echo "Release APK contains a forbidden permission" >&2
             exit 1
           fi
+      - name: Verify root phone APK when present
+        shell: bash
+        run: |
+          APK=../../Hisaab.apk
+          if [ ! -f "$APK" ]; then
+            echo 'Root APK is not present yet; draft PR is incomplete.'
+            exit 0
+          fi
+          SIGNATURE=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK")
+          printf '%s\n' "$SIGNATURE" | grep -Fq '889aceb4f478bbfd13119788955ff0d4f2e584723d06c8415e15a7ec82cf523b'
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -Fq "application-label:'Hisaab'"
+          if "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q application-debuggable; then
+            echo 'Root APK must not be debuggable' >&2
+            exit 1
+          fi
+          if "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$APK" | grep -Eq 'android.permission.(INTERNET|ACCESS_NETWORK_STATE|READ_SMS|READ_CONTACTS|READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE)'; then
+            echo 'Root APK contains a forbidden permission' >&2
+            exit 1
+          fi
       - name: Verify repository privacy
         shell: pwsh
         run: ./scripts/verify_repository_privacy.ps1

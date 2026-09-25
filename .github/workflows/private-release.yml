@@ -52,7 +52,10 @@ jobs:
         run: |
           APK=app/build/outputs/apk/release/app-release.apk
           test -f "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          SIGNATURE=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK")
+          printf '%s\n' "$SIGNATURE"
+          printf '%s\n' "$SIGNATURE" | grep -Fq '889aceb4f478bbfd13119788955ff0d4f2e584723d06c8415e15a7ec82cf523b'
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -Fq "application-label:'Hisaab'"
           if "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q application-debuggable; then
             echo "Release APK is unexpectedly debuggable" >&2
             exit 1
