@@ -356,7 +356,7 @@ internal fun AccountsScreen(
                     leading = { IconBadge(Icons.Outlined.CreditCard, MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.onPrimary) },
                     trailing = {
                         Column(horizontalAlignment = Alignment.End) {
-                            Text(if (month == null) "—" else money(latestMonthSpend(rows)), style = AmountStyle)
+                            Text(if (month == null) "₹0" else money(latestMonthSpend(rows)), style = AmountStyle)
                             Text(if (month == null) "no statement" else "spent in ${shortMonth(month)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     })

@@ -237,7 +237,7 @@ internal fun InitialBadge(name: String, size: Dp = 38.dp) {
     }
 }
 
-/** Fold-style uppercase category tag, e.g. FOOD & GROCERY. */
+/** Uppercase category tag, e.g. FOOD & GROCERY. */
 @Composable
 internal fun CategoryTag(text: String, icon: ImageVector? = null, warn: Boolean = false) = Row(
     Modifier.clip(RoundedCornerShape(6.dp))
