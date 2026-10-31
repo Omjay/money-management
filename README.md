@@ -14,9 +14,11 @@ For this APK, SHA-256 is `95d676e96b396ec16b1f784af5da49b39003cf8626626f5a16dfcd
 
 These are actual Android emulator captures of the debug-only Hisaab demo. Every account, contact, transaction, and amount shown is invented. The release APK has no demo fixture, and no personal statement or financial record is used to produce these images.
 
-| Home | Money | Insights |
-| --- | --- | --- |
-| ![Synthetic Hisaab home screen](.github/project/docs/screenshots/home.png) | ![Synthetic Hisaab money screen](.github/project/docs/screenshots/money.png) | ![Synthetic Hisaab insights screen](.github/project/docs/screenshots/insights.png) |
+| Home | Activity | Accounts | Insights |
+| --- | --- | --- | --- |
+| ![Synthetic Hisaab home screen](.github/project/docs/screenshots/home.png) | ![Synthetic Hisaab activity screen](.github/project/docs/screenshots/activity.png) | ![Synthetic Hisaab accounts screen](.github/project/docs/screenshots/accounts.png) | ![Synthetic Hisaab insights screen](.github/project/docs/screenshots/insights.png) |
+
+The interface follows the phone's light or dark setting. It uses Plus Jakarta Sans, bundled under the SIL Open Font License (see [`docs/licenses`](./.github/project/docs/licenses/PlusJakartaSans-OFL.txt)).
 
 ## What works now
 
@@ -25,13 +27,17 @@ These are actual Android emulator captures of the debug-only Hisaab demo. Every 
 - Keep the vault and imported PDF copies encrypted in the app's internal storage. Entered PDF passwords are used for import and are not saved.
 - Review statement-import row counts and transactions that need classification; save local matching rules.
 - View monthly income, purchases, investments, refunds, transfers, and card settlements separately. Account balances are **last known statement values**, not live bank balances. Card amount due is not shown unless it can be reconciled.
+- Set monthly category budgets and see what's spent and left (Insights → Budgets). Only purchases and fees count against a budget.
+- See recurring payments found in your statements: subscriptions, EMIs and SIPs, with the next expected date, price increases, and charges that seem to have stopped (Insights → Recurring).
+- Search transactions by merchant, category or exact amount, and filter by type and by account or card.
+- Add assets and liabilities that statements don't cover (EPF, NPS, mutual funds, FDs, gold, property, home or vehicle loans) to get a net worth on Home. Values are what you enter; nothing is fetched.
 - Lock access behind the phone's secure screen lock or biometrics. The release app declares no internet, SMS, contacts, or account permission.
 
 There is no automatic bank sync, email or SMS reading, cloud backup, or live-balance connection. A missing statement period or unparsed row can make insights incomplete. Do not use Hisaab as the sole record for a payment decision.
 
 ## What comes next
 
-Reliability comes first: broader statement coverage, balance reconciliation, missing-period warnings, and a clear queue for uncertain transactions. After that, category budgets, recurring-payment reminders, and goal tracking would help turn the ledger into decisions. These are planned, not present in the APK.
+Reliability comes first: broader statement coverage, balance reconciliation, missing-period warnings, and a clear queue for uncertain transactions. After that: importing CAMS/KFintech and NSDL/CDSL consolidated account statements for investments, recurring-payment reminders, and goal tracking. These are planned, not present in the APK.
 
 This direction was informed by established products: [Wallet](https://budgetbakers.com/en/products/wallet/features/) uses category budgets and spending insights; [YNAB](https://www.ynab.com/features) emphasizes targets and spending/net-worth reports; [Monarch](https://www.monarch.com/features/tracking) offers drill-down reporting and recurring-payment views; [Money Manager](https://www.realbyteapps.com/) uses category budgets and asset charts. Hisaab's distinguishing constraint is to keep statement processing local and make confidence in each number visible before adding more dashboard features.
 

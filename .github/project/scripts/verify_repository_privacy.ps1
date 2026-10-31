@@ -22,7 +22,7 @@ if ($pathHits) {
 }
 
 $contentHits = foreach ($path in $tracked) {
-    if ($path -match '\.(apk|jar|png|jpg|jpeg|gif|webp|ico)$') { continue }
+    if ($path -match '\.(apk|jar|png|jpg|jpeg|gif|webp|ico|ttf|otf)$') { continue }
     $content = Get-Content -LiteralPath (Join-Path $repoRoot $path) -Raw -ErrorAction SilentlyContinue
     foreach ($pattern in $blockedContent) {
         if ($content -match $pattern) { "$path matches protected-content policy"; break }
