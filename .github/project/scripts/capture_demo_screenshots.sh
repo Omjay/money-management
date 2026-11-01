@@ -14,10 +14,10 @@ height="${size#*x}"
 test -n "$width" && test -n "$height"
 nav_y=$((height - 150))
 
-for entry in 'home:0' 'money:1' 'cards:2' 'people:3' 'insights:4'; do
+for entry in 'home:0' 'activity:1' 'accounts:2' 'insights:3'; do
   name="${entry%:*}"
   index="${entry#*:}"
-  x=$(((2 * index + 1) * width / 10))
+  x=$(((2 * index + 1) * width / 8))
   adb shell input tap "$x" "$nav_y"
   sleep 2
   adb shell screencap -p "/sdcard/${name}.png"

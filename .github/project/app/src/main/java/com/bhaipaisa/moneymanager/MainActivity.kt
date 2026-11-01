@@ -16,40 +16,49 @@ import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBalance
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.People
-import androidx.compose.material.icons.filled.PieChart
+import androidx.compose.material.icons.filled.Insights
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.CurrencyRupee
+import androidx.compose.material.icons.outlined.Fingerprint
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Insights
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -57,17 +66,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import java.text.NumberFormat
-import java.time.LocalDate
-import java.time.YearMonth
-import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.launch
 
@@ -105,7 +110,10 @@ class MainActivity : FragmentActivity() {
             }
         })
         setContent {
-            if (unlocked || demoState != null) HisaabApp(store, demoState) else VaultLockedScreen(unlockError, onUnlock = ::requestUnlock)
+            HisaabTheme {
+                if (unlocked || demoState != null) HisaabApp(store, demoState, onLock = { handler.removeCallbacks(relock); unlocked = false })
+                else VaultLockedScreen(unlockError, onUnlock = ::requestUnlock)
+            }
         }
     }
 
@@ -149,25 +157,55 @@ class MainActivity : FragmentActivity() {
 }
 
 @Composable
+private fun AppMark() = Box(
+    Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)).background(HeroBrush),
+    contentAlignment = Alignment.Center
+) {
+    Icon(Icons.Outlined.CurrencyRupee, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+}
+
+@Composable
 private fun VaultLockedScreen(error: String?, onUnlock: () -> Unit) {
-    MaterialTheme(colorScheme = androidx.compose.material3.lightColorScheme(primary = Color(0xFF0876D1))) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(32.dp),
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text("Hisaab is locked", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-            Text("Your local financial vault opens only after biometric or device-credential authentication.", modifier = Modifier.padding(vertical = 12.dp))
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 12.dp)) }
-            Button(onClick = onUnlock) { Text("Unlock") }
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+        Column(Modifier.fillMaxSize().systemBarsPadding().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Spacer(Modifier.weight(1f))
+            IconBadge(Icons.Outlined.Lock, MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer, size = 96.dp)
+            Spacer(Modifier.height(24.dp))
+            Text("Hisaab is locked", style = MaterialTheme.typography.headlineMedium)
+            Text(
+                "Use your fingerprint, face or screen lock to open your money on this phone.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp)) }
+            Spacer(Modifier.weight(1f))
+            Button(onClick = onUnlock, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                Icon(Icons.Outlined.Fingerprint, contentDescription = null)
+                Spacer(Modifier.size(8.dp))
+                Text("Unlock")
+            }
+            Text(
+                "Everything stays on this device. No account, no internet.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 12.dp)
+            )
         }
     }
 }
 
-private enum class Destination(val label: String) { HOME("Home"), ACCOUNTS("Money"), CARDS("Cards"), PEOPLE("People"), INSIGHTS("Insights") }
+internal enum class Destination(val label: String, val selectedIcon: ImageVector, val icon: ImageVector) {
+    HOME("Home", Icons.Filled.Home, Icons.Outlined.Home),
+    ACTIVITY("Activity", Icons.AutoMirrored.Filled.ReceiptLong, Icons.AutoMirrored.Outlined.ReceiptLong),
+    ACCOUNTS("Accounts", Icons.Filled.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet),
+    INSIGHTS("Insights", Icons.Filled.Insights, Icons.Outlined.Insights)
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HisaabApp(store: FinanceStore, demoState: AppState? = null) {
+private fun HisaabApp(store: FinanceStore, demoState: AppState? = null, onLock: () -> Unit) {
     val loadedVault = remember { demoState?.let { VaultLoad(it) } ?: store.load() }
     var state by remember { mutableStateOf(loadedVault.state) }
     var vaultError by remember { mutableStateOf(loadedVault.error) }
@@ -192,315 +230,176 @@ private fun HisaabApp(store: FinanceStore, demoState: AppState? = null) {
                 .onFailure { vaultError = "The encrypted vault could not be updated. No changes were saved." }
         }
     }
+    fun startAdd(action: AddAction) {
+        dialog = when (action) {
+            AddAction.IMPORT -> { importStatement.launch(arrayOf("application/pdf")); null }
+            AddAction.ACCOUNT -> "account"
+            AddAction.CARD -> "card"
+            AddAction.HOLDING -> "holding"
+            AddAction.LOAN -> "loan"
+            AddAction.BUDGET -> "budget"
+        }
+    }
 
-    MaterialTheme(colorScheme = androidx.compose.material3.lightColorScheme(primary = Color(0xFF0876D1))) {
-        Scaffold(
-            topBar = { TopAppBar(title = { Text(if (demoState == null) "Hisaab · ${destination.label}" else "Hisaab demo · ${destination.label}") }) },
-            bottomBar = {
-                NavigationBar {
-                    listOf(Destination.HOME, Destination.ACCOUNTS, Destination.CARDS, Destination.PEOPLE, Destination.INSIGHTS).forEach { item ->
-                        val icon = when (item) {
-                            Destination.HOME -> Icons.Default.Home
-                            Destination.ACCOUNTS -> Icons.Default.AccountBalance
-                            Destination.CARDS -> Icons.Default.CreditCard
-                            Destination.PEOPLE -> Icons.Default.People
-                            Destination.INSIGHTS -> Icons.Default.PieChart
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.surface,
+        topBar = {
+            TopAppBar(
+                title = {
+                    if (destination == Destination.HOME) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        AppMark()
+                        Column {
+                            Text(greeting(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Hisaab", style = MaterialTheme.typography.titleLarge)
                         }
-                        NavigationBarItem(selected = item == destination, onClick = { destination = item }, icon = { Icon(icon, item.label) }, label = { Text(item.label) })
-                    }
-                }
-            },
-            floatingActionButton = {
-                when (destination) {
-                    Destination.ACCOUNTS -> FloatingActionButton(onClick = { dialog = "account" }) { Icon(Icons.Default.Add, "Add account") }
-                    Destination.CARDS -> FloatingActionButton(onClick = { dialog = "card" }) { Icon(Icons.Default.Add, "Add credit card") }
-                    Destination.PEOPLE -> FloatingActionButton(onClick = { dialog = "loan" }) { Icon(Icons.Default.Add, "Add loan") }
-                    else -> Unit
+                        if (demoState != null) Text(
+                            "Demo",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer).padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    } else Text(destination.label)
+                },
+                actions = {
+                    if (demoState == null) IconButton(onClick = onLock) { Icon(Icons.Outlined.Lock, "Lock Hisaab now") }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+            )
+        },
+        bottomBar = {
+            NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+                Destination.entries.forEach { item ->
+                    NavigationBarItem(
+                        selected = item == destination,
+                        onClick = { destination = item },
+                        icon = { Icon(if (item == destination) item.selectedIcon else item.icon, contentDescription = null) },
+                        label = { Text(item.label) }
+                    )
                 }
             }
-        ) { padding ->
-            when (destination) {
-                Destination.HOME -> HomeScreen(state, Modifier.padding(padding), onGo = { destination = it })
-                Destination.ACCOUNTS -> AccountsScreen(state, Modifier.padding(padding), onReview = { dialog = "classify:${it.id}" })
-                Destination.CARDS -> CardsScreen(state, Modifier.padding(padding), onImport = { importStatement.launch(arrayOf("application/pdf")) }, onReview = { dialog = "classify:${it.id}" })
-                Destination.PEOPLE -> LoansScreen(state, Modifier.padding(padding), onRepay = { loan -> dialog = "repay:${loan.id}" })
-                Destination.INSIGHTS -> InsightsScreen(state, Modifier.padding(padding), onReview = { dialog = "classify:${it.id}" }, onRemoveRule = { index -> update(state.copy(rules = state.rules.filterIndexed { itemIndex, _ -> itemIndex != index })) })
+        },
+        floatingActionButton = {
+            if (destination == Destination.HOME || destination == Destination.ACCOUNTS) ExtendedFloatingActionButton(
+                onClick = { dialog = "add" },
+                icon = { Icon(Icons.Outlined.Add, contentDescription = null) },
+                text = { Text("Add") },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            )
+        }
+    ) { padding ->
+        val screen = Modifier.padding(padding)
+        val openTransaction: (Transaction) -> Unit = { dialog = "classify:${it.id}" }
+        val openBudget: (String?) -> Unit = { category -> dialog = if (category == null) "budget" else "budget:$category" }
+        when (destination) {
+            Destination.HOME -> HomeScreen(state, screen, onGo = { destination = it }, onAdd = ::startAdd, onTransaction = openTransaction, onBudget = openBudget)
+            Destination.ACTIVITY -> ActivityScreen(state, screen, onTransaction = openTransaction, onImport = { startAdd(AddAction.IMPORT) })
+            Destination.ACCOUNTS -> AccountsScreen(state, screen, onAdd = ::startAdd, onEditHolding = { dialog = "holding:${it.id}" }, onRepay = { dialog = "repay:${it.id}" })
+            Destination.INSIGHTS -> InsightsScreen(
+                state, screen,
+                onTransaction = openTransaction,
+                onRemoveRule = { index -> update(state.copy(rules = state.rules.filterIndexed { itemIndex, _ -> itemIndex != index })) },
+                onEditBudget = openBudget
+            )
+        }
+    }
+
+    val current = dialog
+    val close = { dialog = null }
+    when {
+        current == "add" -> AddSheet(onDismiss = close) { action -> dialog = null; startAdd(action) }
+        current == "account" -> AccountSheet(onDismiss = close) { name, type, amount ->
+            update(state.copy(accounts = state.accounts + Account(UUID.randomUUID().toString(), name, type, balancePaise = amount)))
+            dialog = null
+        }
+        current == "card" -> CardSheet(onDismiss = close) { name, ending, limit ->
+            update(state.copy(cards = state.cards + CreditCard(UUID.randomUUID().toString(), name, ending, limit)))
+            dialog = null
+        }
+        current == "loan" -> LoanSheet(onDismiss = close) { person, principal ->
+            update(state.copy(loans = state.loans + Loan(UUID.randomUUID().toString(), person, principal)))
+            dialog = null
+        }
+        current == "import" -> PasswordSheet(onDismiss = { pendingImport = null; dialog = null }) { password ->
+            val uri = pendingImport
+            pendingImport = null
+            dialog = null
+            if (uri != null && vaultError == null) scope.launch {
+                importing = true
+                try {
+                    val outcome = store.importStatement(uri, password, state)
+                    state = outcome.state
+                    importMessage = outcome.message
+                } finally {
+                    importing = false
+                }
             }
         }
-
-        when (dialog) {
-            "account" -> EditorDialog("Add account", "Account name", "Savings", onDismiss = { dialog = null }) { name, type, amount ->
-                update(state.copy(accounts = state.accounts + Account(UUID.randomUUID().toString(), name, type, balancePaise = amount)))
-                dialog = null
-            }
-            "card" -> EditorDialog("Add credit card", "Card name", "Credit card", onDismiss = { dialog = null }) { name, ending, limit ->
-                update(state.copy(cards = state.cards + CreditCard(UUID.randomUUID().toString(), name, ending.takeLast(4), limit)))
-                dialog = null
-            }
-            "loan" -> EditorDialog("Add loan", "Person name", "Principal", onDismiss = { dialog = null }) { person, _, principal ->
-                update(state.copy(loans = state.loans + Loan(UUID.randomUUID().toString(), person, principal)))
-                dialog = null
-            }
-            "import" -> PasswordDialog(onDismiss = { pendingImport = null; dialog = null }) { password ->
-                val uri = pendingImport
-                pendingImport = null
-                dialog = null
-                if (uri != null && vaultError == null) scope.launch {
-                    importing = true
-                    try {
-                        val outcome = store.importStatement(uri, password, state)
-                        state = outcome.state
-                        importMessage = outcome.message
-                    } finally {
-                        importing = false
-                    }
-                }
-            }
-            else -> if (dialog?.startsWith("classify:") == true) {
-                val transactionId = dialog!!.removePrefix("classify:")
-                state.transactions.firstOrNull { it.id == transactionId }?.let { transaction ->
-                    ClassificationDialog(transaction, onDismiss = { dialog = null }) { kind, category, keyword ->
-                        val rule = keyword?.let { ClassificationRule(it, kind, category) }
-                        update(state.copy(
-                            transactions = state.transactions.map { if (it.id == transactionId) it.copy(kind = kind, category = category) else it },
-                            rules = if (rule == null) state.rules else state.rules + rule
-                        ))
-                        dialog = null
-                    }
-                }
-            } else if (dialog?.startsWith("repay:") == true) {
-                val loanId = dialog!!.removePrefix("repay:")
-                AmountDialog("Record repayment", onDismiss = { dialog = null }) { amount ->
-                    update(state.copy(loans = state.loans.map { if (it.id == loanId) it.copy(repaidPaise = (it.repaidPaise + amount).coerceAtMost(it.principalPaise)) else it }))
+        current != null && current.startsWith("classify:") -> {
+            val transactionId = current.removePrefix("classify:")
+            state.transactions.firstOrNull { it.id == transactionId }?.let { transaction ->
+                val sourceName = state.accounts.firstOrNull { it.id == transaction.sourceId }?.name ?: state.cards.firstOrNull { it.id == transaction.sourceId }?.name
+                TransactionSheet(transaction, sourceName, categoryOptions(state), onDismiss = close) { kind, category, keyword ->
+                    val rule = keyword?.let { ClassificationRule(it, kind, category) }
+                    update(state.copy(
+                        transactions = state.transactions.map { if (it.id == transactionId) it.copy(kind = kind, category = category) else it },
+                        rules = if (rule == null) state.rules else state.rules + rule
+                    ))
                     dialog = null
                 }
             }
         }
-        importMessage?.let { message ->
-            AlertDialog(onDismissRequest = { importMessage = null }, title = { Text("Statement import") }, text = { Text(message) }, confirmButton = { Button(onClick = { importMessage = null }) { Text("Done") } })
-        }
-        if (importing) {
-            AlertDialog(onDismissRequest = {}, title = { Text("Importing locally") }, text = { Text("Reading this statement on your device. No data is being sent anywhere.") }, confirmButton = {})
-        }
-        vaultError?.let { error ->
-            AlertDialog(onDismissRequest = {}, title = { Text("Vault needs attention") }, text = { Text("$error The app is read-only until this is resolved; it will not overwrite the vault.") }, confirmButton = { Button(onClick = {}) { Text("Keep read-only") } })
-        }
-    }
-}
-
-@Composable
-private fun HomeScreen(state: AppState, modifier: Modifier, onGo: (Destination) -> Unit) {
-    val cash = state.accounts.sumOf { it.balancePaise }
-    val outstanding = state.loans.sumOf { it.principalPaise - it.repaidPaise }
-    LazyColumn(modifier = modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { HeroCard("Sum of stored bank balances", money(cash), "Not live. Check each account's statement date before relying on this total.") }
-        item { SectionTitle("What needs attention") }
-        item { ActionCard("Credit cards", if (state.cards.isEmpty()) "No statements imported" else "${state.cards.size} card(s) · import a statement", onClick = { onGo(Destination.CARDS) }) }
-        item { ActionCard("Loans", if (outstanding == 0L) "No loan recorded" else "You owe ${money(outstanding)}", onClick = { onGo(Destination.PEOPLE) }) }
-        item { SectionTitle("Local-only setup") }
-        item { Text("Add accounts, cards, and loans on this device. Imported PDF copies are encrypted before storage.", style = MaterialTheme.typography.bodyMedium) }
-    }
-}
-
-@Composable
-private fun AccountsScreen(state: AppState, modifier: Modifier, onReview: (Transaction) -> Unit) {
-    LazyColumn(modifier = modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { Text("Accounts", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }
-        if (state.accounts.isEmpty()) item { EmptyState("No bank accounts yet", "Use + to add an account. Balances stay on this device.") }
-        items(state.accounts) { account ->
-            val dateNote = account.balanceDateEpochDay?.let { "statement balance as of ${LocalDate.ofEpochDay(it)}" } ?: "balance date unknown"
-            DataCard(account.name, "${account.type} · $dateNote", money(account.balancePaise))
-        }
-        item { SectionTitle("Recent transactions") }
-        if (state.transactions.isEmpty()) item { EmptyState("No transactions yet", "Statement parsing will populate this list after import and review.") }
-        items(state.transactions.sortedByDescending { it.dateEpochDay }.take(20)) { transaction -> TransactionCard(transaction, onReview) }
-    }
-}
-
-@Composable
-private fun CardsScreen(state: AppState, modifier: Modifier, onImport: () -> Unit, onReview: (Transaction) -> Unit) {
-    LazyColumn(modifier = modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { Text("Credit cards", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }
-        item { Text("A card payment settles an earlier purchase; it is not counted as new spending.", style = MaterialTheme.typography.bodyMedium) }
-        if (state.cards.isEmpty()) item { EmptyState("No credit cards yet", "Use + to add a card. Amounts remain blank until a statement is imported.") }
-        items(state.cards) { card ->
-            val cardTransactions = state.transactions.filter { it.sourceId == card.id }.sortedByDescending { it.dateEpochDay }
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(card.name, fontWeight = FontWeight.SemiBold)
-                    Text(if (card.ending.isBlank()) "No number stored" else "Ending ${card.ending}")
-                    Text("Outstanding balance unavailable until a statement balance is reconciled. The figures below are parsed transaction totals, not the amount due.", style = MaterialTheme.typography.bodySmall)
-                    MonthRow("Latest transaction month", monthlySpend(cardTransactions, 0))
-                    MonthRow("Previous month", monthlySpend(cardTransactions, 1))
-                    MonthRow("2 months ago", monthlySpend(cardTransactions, 2))
-                    if (cardTransactions.isNotEmpty()) {
-                        Text("Transactions", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                        cardTransactions.take(8).forEach { transaction ->
-                            TransactionCard(transaction, onReview)
-                        }
-                    }
+        current != null && current.startsWith("repay:") -> {
+            state.loans.firstOrNull { it.id == current.removePrefix("repay:") }?.let { loan ->
+                RepaySheet(loan, onDismiss = close) { amount ->
+                    update(state.copy(loans = state.loans.map { if (it.id == loan.id) it.copy(repaidPaise = (it.repaidPaise + amount).coerceAtMost(it.principalPaise)) else it }))
+                    dialog = null
                 }
             }
         }
-        item { Button(onClick = onImport, modifier = Modifier.fillMaxWidth()) { Text("Import PDF statement") } }
-        item { SectionTitle("Encrypted imported statements") }
-        if (state.imports.isEmpty()) item { EmptyState("Nothing imported", "The selected PDF is copied into encrypted internal storage.") }
-        items(state.imports.sortedByDescending { it.importedAt }) { item ->
-            val counts = if (item.candidateRows == 0 && item.parsedTransactionCount > 0) "${item.parsedTransactionCount} added · older import; coverage unknown" else "${item.candidateRows} rows found · ${item.parsedTransactionCount} added · ${item.unparsedRows} unparsed"
-            DataCard(item.displayName, "${item.parseStatus} · $counts", "")
-        }
-    }
-}
-
-@Composable
-private fun LoansScreen(state: AppState, modifier: Modifier, onRepay: (Loan) -> Unit) {
-    LazyColumn(modifier = modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { Text("People and loans", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }
-        item { Text("Loans are separate from one-time peer transfers. Record each confirmed repayment against the original principal.") }
-        if (state.loans.isEmpty()) item { EmptyState("No loans recorded", "Use + to add a private loan on this device.") }
-        items(state.loans) { loan ->
-            val outstanding = loan.principalPaise - loan.repaidPaise
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(loan.personName, fontWeight = FontWeight.SemiBold)
-                    Text("I owe ${money(outstanding)}")
-                    Text("Principal ${money(loan.principalPaise)} · Repaid ${money(loan.repaidPaise)}", style = MaterialTheme.typography.bodySmall)
-                    Button(onClick = { onRepay(loan) }) { Text("Record repayment") }
-                }
+        current != null && (current == "budget" || current.startsWith("budget:")) -> {
+            val category = current.removePrefix("budget").removePrefix(":")
+            val existing = state.budgets.firstOrNull { it.category.equals(category, ignoreCase = true) }
+            BudgetSheet(
+                existing = existing,
+                initialCategory = category,
+                suggestions = budgetCategorySuggestions(state),
+                onDismiss = close,
+                onRemove = { update(state.copy(budgets = state.budgets.filterNot { it == existing })); dialog = null }
+            ) { budget ->
+                update(state.copy(budgets = state.budgets.filterNot { it.category.equals(budget.category, ignoreCase = true) } + budget))
+                dialog = null
             }
         }
-    }
-}
-
-@Composable
-private fun InsightsScreen(state: AppState, modifier: Modifier, onReview: (Transaction) -> Unit, onRemoveRule: (Int) -> Unit) {
-    var monthsBack by rememberSaveable { mutableStateOf(0) }
-    val anchor = state.transactions.maxOfOrNull { it.dateEpochDay }?.let { YearMonth.from(LocalDate.ofEpochDay(it)) } ?: YearMonth.now()
-    val month = anchor.minusMonths(monthsBack.toLong())
-    val selected = state.transactions.filter { YearMonth.from(LocalDate.ofEpochDay(it.dateEpochDay)) == month }
-    val expenses = selected.filter { it.kind == TransactionKind.EXPENSE && it.amountPaise < 0 }
-    val income = selected.filter { it.kind == TransactionKind.INCOME && it.amountPaise > 0 }.sumOf { it.amountPaise }
-    val investments = selected.filter { it.kind == TransactionKind.INVESTMENT && it.amountPaise < 0 }.sumOf { -it.amountPaise }
-    val refunds = selected.filter { it.kind == TransactionKind.REFUND && it.amountPaise > 0 }.sumOf { it.amountPaise }
-    val debtPayments = selected.filter { it.kind == TransactionKind.DEBT_PAYMENT && it.amountPaise < 0 }.sumOf { -it.amountPaise }
-    val spending = expenses.groupBy { it.category }.mapValues { (_, value) -> value.sumOf { -it.amountPaise } }.toList().sortedByDescending { it.second }
-    val review = selected.filter { it.kind == TransactionKind.REVIEW }.sortedByDescending { it.dateEpochDay }
-    LazyColumn(modifier = modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { Text("Monthly finances", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }
-        item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Button(onClick = { monthsBack++ }) { Text("Earlier") }
-            Text(month.toString(), modifier = Modifier.padding(12.dp))
-            Button(onClick = { monthsBack-- }, enabled = monthsBack > 0) { Text("Later") }
-        } }
-        item { Text("Based only on imported and reviewed entries. Missing statement rows or periods can make totals incomplete.", style = MaterialTheme.typography.bodySmall) }
-        item { DataCard("Income", "Confirmed incoming money", money(income)) }
-        item { DataCard("Purchases and fees", "Excludes settlements, transfers and investments", money(expenses.sumOf { -it.amountPaise })) }
-        item { DataCard("Investment contributions", "Not counted as purchases", money(investments)) }
-        item { DataCard("Refunds and credits", "Shown separately from income", money(refunds)) }
-        item { DataCard("Loan payments", "Not counted as purchases", money(debtPayments)) }
-        item { DataCard("Card settlement entries", "May include both sides of one payment", selected.count { it.kind == TransactionKind.CARD_SETTLEMENT }.toString()) }
-        item { DataCard("Transfer entries", "May include both sides of one transfer", selected.count { it.kind == TransactionKind.TRANSFER }.toString()) }
-        item { SectionTitle("Purchase categories") }
-        if (spending.isEmpty()) item { EmptyState("No classified purchases", "This month may have no purchases or may need review.") }
-        items(spending) { (category, amount) -> DataCard(category, "Selected month", money(amount)) }
-        item { SectionTitle("Needs review · ${review.size}") }
-        if (review.isEmpty()) item { Text("No uncertain transactions in this month.") }
-        items(review) { transaction -> TransactionCard(transaction, onReview) }
-        item { SectionTitle("Saved matching rules") }
-        if (state.rules.isEmpty()) item { Text("No custom rules saved.") }
-        itemsIndexed(state.rules) { index, rule ->
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp)) {
-                    Text("Contains: ${rule.keyword}")
-                    Text("${rule.kind.label} · ${rule.category}", style = MaterialTheme.typography.bodySmall)
-                    Button(onClick = { onRemoveRule(index) }) { Text("Remove rule") }
-                }
+        current != null && (current == "holding" || current.startsWith("holding:")) -> {
+            val existing = state.holdings.firstOrNull { it.id == current.removePrefix("holding:") }
+            HoldingSheet(
+                existing = existing,
+                onDismiss = close,
+                onRemove = { update(state.copy(holdings = state.holdings.filterNot { it.id == existing?.id })); dialog = null }
+            ) { holding ->
+                update(state.copy(holdings = state.holdings.filterNot { it.id == holding.id } + holding))
+                dialog = null
             }
         }
     }
-}
-
-@Composable private fun HeroCard(label: String, value: String, note: String) = Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary)) { Column(Modifier.padding(20.dp)) { Text(label, color = MaterialTheme.colorScheme.onPrimary); Text(value, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onPrimary); Text(note, color = MaterialTheme.colorScheme.onPrimary) } }
-@Composable private fun SectionTitle(text: String) = Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
-@Composable private fun ActionCard(title: String, subtitle: String, onClick: () -> Unit) = Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(title, fontWeight = FontWeight.SemiBold); Text(subtitle, style = MaterialTheme.typography.bodySmall) } }
-@Composable private fun DataCard(title: String, subtitle: String, value: String) = Card(modifier = Modifier.fillMaxWidth()) { Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) { Column(Modifier.weight(1f)) { Text(title, fontWeight = FontWeight.SemiBold); Text(subtitle, style = MaterialTheme.typography.bodySmall) }; Text(value, modifier = Modifier.padding(start = 12.dp).widthIn(min = 64.dp)) } }
-@Composable private fun TransactionCard(transaction: Transaction, onReview: (Transaction) -> Unit) = Card(onClick = { onReview(transaction) }, modifier = Modifier.fillMaxWidth()) { Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) { Column(Modifier.weight(1f)) { Text(transaction.title, fontWeight = FontWeight.SemiBold); Text("${transaction.kind.label} · ${transaction.category} · ${LocalDate.ofEpochDay(transaction.dateEpochDay)}", style = MaterialTheme.typography.bodySmall) }; Text(money(transaction.amountPaise), modifier = Modifier.padding(start = 12.dp).widthIn(min = 64.dp)) } }
-@Composable private fun EmptyState(title: String, message: String) = Card(modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(title, fontWeight = FontWeight.SemiBold); Text(message, style = MaterialTheme.typography.bodySmall) } }
-@Composable private fun MonthRow(label: String, value: String) = Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(label); Text(value, fontWeight = FontWeight.SemiBold) }
-
-@Composable
-private fun ClassificationDialog(transaction: Transaction, onDismiss: () -> Unit, onConfirm: (TransactionKind, String, String?) -> Unit) {
-    var kind by remember(transaction.id) { mutableStateOf(transaction.kind) }
-    var category by remember(transaction.id) { mutableStateOf(transaction.category) }
-    var expanded by remember { mutableStateOf(false) }
-    var rememberRule by remember { mutableStateOf(false) }
-    var keyword by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Review transaction") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("${transaction.title} · ${money(transaction.amountPaise)}")
-                Button(onClick = { expanded = true }) { Text("Type: ${kind.label}") }
-                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                    TransactionKind.entries.forEach { option ->
-                        DropdownMenuItem(text = { Text(option.label) }, onClick = { kind = option; expanded = false })
-                    }
+    importMessage?.let { message ->
+        AlertDialog(onDismissRequest = { importMessage = null }, title = { Text("Statement imported") }, text = { Text(message) }, confirmButton = { TextButton(onClick = { importMessage = null }) { Text("Done") } })
+    }
+    if (importing) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Reading statement") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text("This happens on your phone. Nothing is uploaded.")
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
-                OutlinedTextField(category, { category = it }, label = { Text("Category") }, singleLine = true)
-                Row { Checkbox(checked = rememberRule, onCheckedChange = { rememberRule = it }); Text("Apply to future descriptions containing a keyword", modifier = Modifier.padding(top = 12.dp)) }
-                if (rememberRule) {
-                    OutlinedTextField(keyword, { keyword = it }, label = { Text("Matching keyword (at least 3 characters)") }, singleLine = true)
-                    Text("Rules are saved only in the encrypted local vault. Choose a specific keyword to avoid misclassifying unrelated entries.", style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        },
-        confirmButton = { Button(onClick = { onConfirm(kind, category.trim(), keyword.trim().takeIf { rememberRule }) }, enabled = category.isNotBlank() && (!rememberRule || keyword.trim().length >= 3)) { Text("Save locally") } },
-        dismissButton = { Button(onClick = onDismiss) { Text("Cancel") } }
-    )
-}
-
-@Composable
-private fun EditorDialog(title: String, firstLabel: String, secondLabel: String, onDismiss: () -> Unit, onConfirm: (String, String, Long) -> Unit) {
-    var first by remember { mutableStateOf("") }; var second by remember { mutableStateOf("") }; var amount by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(first, { first = it }, label = { Text(firstLabel) }); OutlinedTextField(second, { second = it }, label = { Text(secondLabel) }); OutlinedTextField(amount, { amount = it }, label = { Text("Amount in ₹ (optional)") }) } }, confirmButton = { Button(onClick = { onConfirm(first.trim(), second.trim(), if (amount.isBlank()) 0L else requireNotNull(rupeesToPaise(amount))) }, enabled = first.isNotBlank() && (amount.isBlank() || rupeesToPaise(amount) != null)) { Text("Save locally") } }, dismissButton = { Button(onClick = onDismiss) { Text("Cancel") } })
-}
-
-@Composable
-private fun AmountDialog(title: String, onDismiss: () -> Unit, onConfirm: (Long) -> Unit) {
-    var amount by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = { OutlinedTextField(amount, { amount = it }, label = { Text("Amount in ₹") }) }, confirmButton = { Button(onClick = { rupeesToPaise(amount)?.let(onConfirm) }, enabled = (rupeesToPaise(amount) ?: 0L) > 0L) { Text("Save locally") } }, dismissButton = { Button(onClick = onDismiss) { Text("Cancel") } })
-}
-
-@Composable
-private fun PasswordDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
-    var password by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Import statement") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Enter a PDF password only if this statement is protected. It is used for this import and is never stored.")
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text("PDF password (optional)") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    singleLine = true
-                )
-            }
-        },
-        confirmButton = { Button(onClick = { val submitted = password; password = ""; onConfirm(submitted) }) { Text("Parse locally") } },
-        dismissButton = { Button(onClick = { password = ""; onDismiss() }) { Text("Cancel") } }
-    )
-}
-
-private fun money(paise: Long): String = NumberFormat.getCurrencyInstance(Locale("en", "IN")).format(paise / 100.0)
-
-private fun monthlySpend(transactions: List<Transaction>, monthsBack: Long): String {
-    val latestDate = transactions.maxOfOrNull { it.dateEpochDay }?.let(LocalDate::ofEpochDay) ?: return "—"
-    val target = java.time.YearMonth.from(latestDate).minusMonths(monthsBack)
-    val spent = transactions.filter { it.amountPaise < 0 && java.time.YearMonth.from(LocalDate.ofEpochDay(it.dateEpochDay)) == target }.sumOf { -it.amountPaise }
-    return if (spent == 0L) "—" else money(spent)
+            },
+            confirmButton = {}
+        )
+    }
+    vaultError?.let { error ->
+        AlertDialog(onDismissRequest = {}, title = { Text("Vault needs attention") }, text = { Text("$error The app is read-only until this is resolved; it will not overwrite the vault.") }, confirmButton = { TextButton(onClick = {}) { Text("Keep read-only") } })
+    }
 }

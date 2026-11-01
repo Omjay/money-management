@@ -51,13 +51,18 @@ data class StatementImport(
     val candidateRows: Int = 0,
     val unparsedRows: Int = 0
 )
+data class Budget(val category: String, val monthlyLimitPaise: Long)
+/** A manually entered asset or liability the statements do not cover, e.g. EPF, gold or a home loan. */
+data class Holding(val id: String, val name: String, val type: String, val valuePaise: Long, val liability: Boolean, val asOfEpochDay: Long)
 data class AppState(
     val accounts: List<Account> = emptyList(),
     val cards: List<CreditCard> = emptyList(),
     val loans: List<Loan> = emptyList(),
     val transactions: List<Transaction> = emptyList(),
     val imports: List<StatementImport> = emptyList(),
-    val rules: List<ClassificationRule> = emptyList()
+    val rules: List<ClassificationRule> = emptyList(),
+    val budgets: List<Budget> = emptyList(),
+    val holdings: List<Holding> = emptyList()
 )
 
 data class VaultLoad(val state: AppState, val error: String? = null)
@@ -304,6 +309,8 @@ class FinanceStore(private val context: Context) {
         put("transactions", JSONArray(state.transactions.map { JSONObject().apply { put("id", it.id); put("sourceId", it.sourceId); put("sourceType", it.sourceType); put("reference", it.sourceReference); put("title", it.title); put("category", it.category); put("amount", it.amountPaise); put("date", it.dateEpochDay); put("kind", it.kind.name) } }))
         put("imports", JSONArray(state.imports.map { JSONObject().apply { put("id", it.id); put("name", it.displayName); put("at", it.importedAt); put("status", it.parseStatus); put("count", it.parsedTransactionCount); put("candidates", it.candidateRows); put("unparsed", it.unparsedRows) } }))
         put("rules", JSONArray(state.rules.map { JSONObject().apply { put("keyword", it.keyword); put("kind", it.kind.name); put("category", it.category) } }))
+        put("budgets", JSONArray(state.budgets.map { JSONObject().apply { put("category", it.category); put("limit", it.monthlyLimitPaise) } }))
+        put("holdings", JSONArray(state.holdings.map { JSONObject().apply { put("id", it.id); put("name", it.name); put("type", it.type); put("value", it.valuePaise); put("liability", it.liability); put("asOf", it.asOfEpochDay) } }))
     }.toString()
 
     private fun decode(json: String): AppState {
@@ -326,7 +333,9 @@ class FinanceStore(private val context: Context) {
                 Transaction(it.getString("id"), it.getString("sourceId"), sourceType, it.optString("reference", it.getString("id")), title, category, amount, it.getLong("date"), kind)
             },
             imports = items("imports") { StatementImport(it.getString("id"), it.getString("name"), it.getLong("at"), it.optString("status", "Imported"), it.optInt("count"), it.optInt("candidates"), it.optInt("unparsed")) },
-            rules = items("rules") { ClassificationRule(it.getString("keyword"), TransactionKind.fromStored(it.getString("kind")), it.getString("category")) }
+            rules = items("rules") { ClassificationRule(it.getString("keyword"), TransactionKind.fromStored(it.getString("kind")), it.getString("category")) },
+            budgets = items("budgets") { Budget(it.getString("category"), it.getLong("limit")) },
+            holdings = items("holdings") { Holding(it.getString("id"), it.getString("name"), it.getString("type"), it.getLong("value"), it.optBoolean("liability"), it.getLong("asOf")) }
         )
     }
 }
