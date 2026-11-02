@@ -1,6 +1,7 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
@@ -12,7 +13,7 @@ val privateReleaseSigningAvailable = listOf(releaseStorePath, releaseStorePasswo
 
 android {
     namespace = "com.bhaipaisa.moneymanager"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.bhaipaisa.moneymanager"
@@ -52,17 +53,19 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_17
+    }
+}
+
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2024.12.01"))
+    implementation(platform("androidx.compose:compose-bom:2026.08.00"))
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.10.0")
     implementation("androidx.biometric:biometric:1.1.0")
@@ -72,10 +75,10 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     constraints {
-        implementation("org.bouncycastle:bcprov-jdk15to18:1.84") {
+        implementation("org.bouncycastle:bcprov-jdk15to18:1.86") {
             because("PDFBox's older transitive crypto provider has published security advisories")
         }
-        implementation("org.bouncycastle:bcpkix-jdk15to18:1.84") {
+        implementation("org.bouncycastle:bcpkix-jdk15to18:1.86") {
             because("PDFBox's older transitive PKIX library has published security advisories")
         }
     }

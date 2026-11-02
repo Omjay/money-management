@@ -72,7 +72,7 @@ import kotlin.math.abs
 
 // ---- Formatting ----
 
-private val INDIA = Locale("en", "IN")
+private val INDIA = Locale.forLanguageTag("en-IN")
 
 /** Whole rupees drop the ".00", the way payment apps show amounts. */
 internal fun money(paise: Long): String {
