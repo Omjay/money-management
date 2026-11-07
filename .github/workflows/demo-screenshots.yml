@@ -24,7 +24,7 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37 # v6
+        uses: gradle/actions/setup-gradle@c8a326d85724fce2ae59a38810306f4a058f26a4 # v6
       - name: Build debug-only demo APK
         working-directory: .github/project
         run: ./gradlew assembleDebug --no-daemon
