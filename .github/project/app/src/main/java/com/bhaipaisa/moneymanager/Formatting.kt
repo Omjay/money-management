@@ -11,7 +11,7 @@ import kotlin.math.abs
  * Money and date text. Kept free of Android and Compose so it can be unit tested on the JVM.
  */
 
-private val INDIA = Locale("en", "IN")
+private val INDIA = Locale.forLanguageTag("en-IN")
 
 /** Whole rupees drop the ".00", the way payment apps show amounts. */
 internal fun money(paise: Long): String {
