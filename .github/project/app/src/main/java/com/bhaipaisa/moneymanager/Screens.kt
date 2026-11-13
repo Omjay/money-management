@@ -163,7 +163,7 @@ internal fun HomeScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(monthName(month), style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-                    Text("+${compactMoney(moneyIn)} in", style = MaterialTheme.typography.labelLarge, color = Color(0xFF8BE3B4))
+                    Text("${if (moneyIn > 0) "+" else ""}${compactMoney(moneyIn)} in", style = MaterialTheme.typography.labelLarge, color = Color(0xFF8BE3B4))
                     Text("  ·  ", style = MaterialTheme.typography.labelLarge, color = Color.White.copy(alpha = 0.5f))
                     Text("${compactMoney(spending.sumOf { it.second })} spent", style = MaterialTheme.typography.labelLarge)
                 }
@@ -449,7 +449,7 @@ private fun SpendingTab(state: AppState, anchor: YearMonth, month: YearMonth, mo
         Flow("Invested", "SIPs and other contributions", Icons.AutoMirrored.Outlined.TrendingUp, money(total(TransactionKind.INVESTMENT, false))),
         Flow("Refunds", "Kept apart from income", Icons.Outlined.Replay, signedMoney(refunds), positive = refunds > 0),
         Flow("Loan payments", "Not counted as spending", Icons.Outlined.RequestQuote, money(total(TransactionKind.DEBT_PAYMENT, false))),
-        Flow("Card bills and transfers", "Your own money moving", Icons.Outlined.SwapHoriz, "${selected.count { it.kind == TransactionKind.CARD_SETTLEMENT || it.kind == TransactionKind.TRANSFER }}")
+        Flow("Card bills and transfers", "Your own money moving", Icons.Outlined.SwapHoriz, entryCount(selected.count { it.kind == TransactionKind.CARD_SETTLEMENT || it.kind == TransactionKind.TRANSFER }))
     )
     LazyColumn(Modifier.fillMaxSize(), contentPadding = TAB_PADDING, verticalArrangement = ITEM_SPACING) {
         item { MonthSwitcher(month, monthsBack, onMonthsBack) }
