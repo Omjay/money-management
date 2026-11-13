@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import android.util.AtomicFile
 import org.json.JSONArray
@@ -19,6 +20,7 @@ import java.nio.ByteBuffer
 import java.security.KeyStore
 import java.util.Locale
 import java.util.UUID
+import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.CipherOutputStream
 import javax.crypto.KeyGenerator
@@ -65,7 +67,8 @@ data class AppState(
     val holdings: List<Holding> = emptyList()
 )
 
-data class VaultLoad(val state: AppState, val error: String? = null)
+/** [unreadable] means the vault file exists but could not be decrypted; [error] then explains why. */
+data class VaultLoad(val state: AppState, val error: String? = null, val unreadable: Boolean = false)
 data class ImportOutcome(val state: AppState, val message: String)
 
 internal const val VAULT_AUTH_VALIDITY_SECONDS = 300
@@ -109,7 +112,13 @@ class FinanceStore(private val context: Context) {
     private val atomicVault = AtomicFile(vaultFile)
     private val statementDir = File(context.filesDir, "statements").apply { mkdirs() }
 
-    fun prepareForAuthentication() = crypto.prepare()
+    /** Android deletes auth-bound keys when the screen lock is removed; a vault without its key can never be read again. */
+    private var keyLostSinceLastSave = false
+
+    fun prepareForAuthentication() {
+        if (vaultFile.exists() && !crypto.hasKey()) keyLostSinceLastSave = true
+        crypto.prepare()
+    }
 
     fun load(): VaultLoad {
         if (!vaultFile.exists()) return VaultLoad(AppState())
@@ -121,7 +130,26 @@ class FinanceStore(private val context: Context) {
             if (legacy || state != decoded) save(state)
             VaultLoad(state)
         }
-            .getOrElse { VaultLoad(AppState(), "Your encrypted vault could not be opened. Existing files have not been changed.") }
+            .getOrElse { error ->
+                val causes = generateSequence(error) { it.cause }.toList()
+                val message = when {
+                    keyLostSinceLastSave || causes.any { it is KeyPermanentlyInvalidatedException } ->
+                        "Your phone's screen lock was removed or reset, so Android deleted the key that unlocked this vault. The saved data can't be decrypted any more."
+                    causes.any { it is AEADBadTagException } ->
+                        "The vault can't be decrypted with this phone's current key. This usually happens after the screen lock is removed or reset, which makes Android delete the old key."
+                    else -> "Your encrypted vault could not be opened."
+                }
+                VaultLoad(AppState(), message, unreadable = true)
+            }
+    }
+
+    /** Deletes the vault, every encrypted statement copy and both vault keys, so the next save starts a new vault. */
+    fun eraseVault() {
+        atomicVault.delete()
+        statementDir.listFiles()?.forEach { it.delete() }
+        crypto.deleteKey()
+        legacyCrypto.deleteKey()
+        keyLostSinceLastSave = false
     }
 
     fun save(state: AppState) {
@@ -129,6 +157,7 @@ class FinanceStore(private val context: Context) {
         try {
             output.write(crypto.encrypt(encode(state).encodeToByteArray()))
             atomicVault.finishWrite(output)
+            keyLostSinceLastSave = false
         } catch (error: Exception) {
             atomicVault.failWrite(output)
             throw error
@@ -379,6 +408,13 @@ private class VaultCrypto(
 
     fun prepare() {
         key()
+    }
+
+    fun hasKey(): Boolean = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.containsAlias(alias)
+
+    fun deleteKey() {
+        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        if (keyStore.containsAlias(alias)) keyStore.deleteEntry(alias)
     }
 
     fun encrypt(plain: ByteArray): ByteArray {
