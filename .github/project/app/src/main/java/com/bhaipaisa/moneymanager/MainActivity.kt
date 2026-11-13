@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -81,6 +82,9 @@ class MainActivity : FragmentActivity() {
     private var unlocked by mutableStateOf(false)
     private var unlockError by mutableStateOf<String?>(null)
     private var authenticationInProgress = false
+    /** The system file picker covers Hisaab while a statement is chosen; that must not relock the vault. */
+    private var externalPickInProgress = false
+    private var unlockedAtMillis = 0L
     private val handler = Handler(Looper.getMainLooper())
     private val relock = Runnable { unlocked = false }
     private lateinit var biometricPrompt: BiometricPrompt
@@ -97,6 +101,7 @@ class MainActivity : FragmentActivity() {
                 authenticationInProgress = false
                 unlockError = null
                 unlocked = true
+                unlockedAtMillis = SystemClock.elapsedRealtime()
                 handler.removeCallbacks(relock)
                 handler.postDelayed(relock, (VAULT_AUTH_VALIDITY_SECONDS - 10L) * 1_000L)
             }
@@ -111,7 +116,12 @@ class MainActivity : FragmentActivity() {
         })
         setContent {
             HisaabTheme {
-                if (unlocked || demoState != null) HisaabApp(store, demoState, onLock = { handler.removeCallbacks(relock); unlocked = false })
+                if (unlocked || demoState != null) HisaabApp(
+                    store, demoState,
+                    onLock = { handler.removeCallbacks(relock); unlocked = false },
+                    onExternalPick = { externalPickInProgress = true },
+                    onClose = { finish() }
+                )
                 else VaultLockedScreen(unlockError, onUnlock = ::requestUnlock)
             }
         }
@@ -119,12 +129,21 @@ class MainActivity : FragmentActivity() {
 
     override fun onStart() {
         super.onStart()
+        if (externalPickInProgress) {
+            externalPickInProgress = false
+            // Coming back from the file picker: stay unlocked only while the vault key's auth window is still open.
+            val remaining = (VAULT_AUTH_VALIDITY_SECONDS - 10L) * 1_000L - (SystemClock.elapsedRealtime() - unlockedAtMillis)
+            if (unlocked && remaining > 0) {
+                handler.removeCallbacks(relock)
+                handler.postDelayed(relock, remaining)
+            } else unlocked = false
+        }
         if (demoState == null && !unlocked && !authenticationInProgress) requestUnlock()
     }
 
     override fun onStop() {
         handler.removeCallbacks(relock)
-        if (!authenticationInProgress && !isChangingConfigurations) unlocked = false
+        if (!authenticationInProgress && !isChangingConfigurations && !externalPickInProgress) unlocked = false
         super.onStop()
     }
 
@@ -205,13 +224,16 @@ internal enum class Destination(val label: String, val selectedIcon: ImageVector
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HisaabApp(store: FinanceStore, demoState: AppState? = null, onLock: () -> Unit) {
+private fun HisaabApp(store: FinanceStore, demoState: AppState? = null, onLock: () -> Unit, onExternalPick: () -> Unit, onClose: () -> Unit) {
     val loadedVault = remember { demoState?.let { VaultLoad(it) } ?: store.load() }
     var state by remember { mutableStateOf(loadedVault.state) }
     var vaultError by remember { mutableStateOf(loadedVault.error) }
+    /** True when the vault itself could not be opened, as opposed to one save failing. */
+    var vaultUnreadable by remember { mutableStateOf(loadedVault.unreadable) }
+    var confirmErase by remember { mutableStateOf(false) }
     var destination by rememberSaveable { mutableStateOf(Destination.HOME) }
     var dialog by rememberSaveable { mutableStateOf<String?>(null) }
-    var pendingImport by remember { mutableStateOf<Uri?>(null) }
+    var pendingImport by rememberSaveable { mutableStateOf<Uri?>(null) }
     var importMessage by remember { mutableStateOf<String?>(null) }
     var importing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -232,7 +254,14 @@ private fun HisaabApp(store: FinanceStore, demoState: AppState? = null, onLock: 
     }
     fun startAdd(action: AddAction) {
         dialog = when (action) {
-            AddAction.IMPORT -> { importStatement.launch(arrayOf("application/pdf")); null }
+            AddAction.IMPORT -> {
+                if (demoState != null) importMessage = "Importing is turned off in the demo, so the demo can never write into your real data."
+                else {
+                    onExternalPick()
+                    importStatement.launch(arrayOf("application/pdf"))
+                }
+                null
+            }
             AddAction.ACCOUNT -> "account"
             AddAction.CARD -> "card"
             AddAction.HOLDING -> "holding"
@@ -324,7 +353,8 @@ private fun HisaabApp(store: FinanceStore, demoState: AppState? = null, onLock: 
             val uri = pendingImport
             pendingImport = null
             dialog = null
-            if (uri != null && vaultError == null) scope.launch {
+            // The demo state is synthetic and must never reach the real vault or statement storage.
+            if (uri != null && vaultError == null && demoState == null) scope.launch {
                 importing = true
                 try {
                     val outcome = store.importStatement(uri, password, state)
@@ -384,7 +414,7 @@ private fun HisaabApp(store: FinanceStore, demoState: AppState? = null, onLock: 
         }
     }
     importMessage?.let { message ->
-        AlertDialog(onDismissRequest = { importMessage = null }, title = { Text("Statement imported") }, text = { Text(message) }, confirmButton = { TextButton(onClick = { importMessage = null }) { Text("Done") } })
+        AlertDialog(onDismissRequest = { importMessage = null }, title = { Text("Statement import") }, text = { Text(message) }, confirmButton = { TextButton(onClick = { importMessage = null }) { Text("Done") } })
     }
     if (importing) {
         AlertDialog(
@@ -400,6 +430,34 @@ private fun HisaabApp(store: FinanceStore, demoState: AppState? = null, onLock: 
         )
     }
     vaultError?.let { error ->
-        AlertDialog(onDismissRequest = {}, title = { Text("Vault needs attention") }, text = { Text("$error The app is read-only until this is resolved; it will not overwrite the vault.") }, confirmButton = { TextButton(onClick = {}) { Text("Keep read-only") } })
+        if (vaultUnreadable) AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Your vault can't be opened") },
+            text = { Text("$error Hisaab won't change the vault file unless you choose to erase it.") },
+            confirmButton = { TextButton(onClick = { confirmErase = true }) { Text("Erase and start fresh", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = onClose) { Text("Close app") } }
+        ) else AlertDialog(
+            // A failed save keeps the last saved state, so it is safe to carry on and try again.
+            onDismissRequest = { vaultError = null },
+            title = { Text("Couldn't save") },
+            text = { Text("$error Check that your phone has free storage, then try again.") },
+            confirmButton = { TextButton(onClick = { vaultError = null }) { Text("OK") } }
+        )
+    }
+    if (confirmErase) {
+        AlertDialog(
+            onDismissRequest = { confirmErase = false },
+            title = { Text("Erase everything?") },
+            text = { Text("This deletes the vault and every imported statement copy on this phone. It can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmErase = false
+                    runCatching { store.eraseVault() }
+                        .onSuccess { state = AppState(); vaultError = null; vaultUnreadable = false }
+                        .onFailure { vaultError = "The old vault could not be removed." }
+                }) { Text("Erase", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { confirmErase = false }) { Text("Cancel") } }
+        )
     }
 }
