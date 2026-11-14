@@ -23,7 +23,7 @@ jobs:
           distribution: temurin
           java-version: "17"
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37 # v6
+        uses: gradle/actions/setup-gradle@445a164ce8dd7af4e36840ca2f5aa4e1faf842f2 # v6
       - name: Test and build release
         run: ./gradlew testDebugUnitTest assembleRelease --no-daemon
       - name: Verify release APK permissions
